@@ -196,6 +196,50 @@ svg {
   grid-template-rows: var(--topbar-height) minmax(0, 1fr) min(42vh, 390px);
 }
 
+.drop-import-overlay {
+  position: fixed;
+  z-index: 250;
+  inset: 12px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--blue);
+  background: rgb(247 247 243 / 94%);
+  pointer-events: none;
+}
+
+.drop-import-message {
+  display: grid;
+  max-width: min(520px, calc(100vw - 64px));
+  justify-items: center;
+  gap: 9px;
+  padding: 32px;
+  text-align: center;
+}
+
+.drop-import-icon {
+  width: 58px;
+  height: 58px;
+  margin-bottom: 8px;
+  color: var(--blue);
+  stroke-width: 1.25;
+}
+
+.drop-import-message strong {
+  font-size: clamp(1.45rem, 4vw, 2.5rem);
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.drop-import-message span {
+  color: var(--graphite-2);
+  font-size: 0.9rem;
+}
+
+.drop-import-message small {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
 .topbar {
   grid-area: topbar;
   display: grid;
@@ -2000,5 +2044,14 @@ svg {
     right: 10px;
     bottom: calc(var(--queue-height) + 10px);
     max-width: calc(100vw - 20px);
+  }
+
+  .drop-import-overlay {
+    inset: 8px;
+  }
+
+  .drop-import-message {
+    max-width: calc(100vw - 32px);
+    padding: 20px;
   }
 }

@@ -2,6 +2,13 @@
 
 所有重要變更都會記錄在此。版本格式遵循 Semantic Versioning。
 
+## Unreleased
+
+### Added
+
+- 支援將一張或多張 JPG、PNG、WebP、GIF 直接拖入 Stylebase 視窗匯入。
+- 加入全視窗拖放提示、格式拒絕回饋與匯入中重複操作保護。
+
 ## [1.0.0] - 2026-07-30
 
 ### Added

@@ -1,5 +1,9 @@
 import { beginPendingButtons } from "./button-state.js";
 import {
+  hasDraggedFiles,
+  partitionImageFiles,
+} from "./drop-import.js";
+import {
   renderSwatchColor,
   safeHexColor as safeColor,
 } from "./palette-swatch.js";
@@ -28,6 +32,8 @@ const state = {
   queueExpanded: false,
   searchTimer: null,
   pollTimer: null,
+  dragDepth: 0,
+  importing: false,
   syntheticAssets: [],
   inspectorReturnFocus: null,
   inspectorReturnAssetId: null,
@@ -57,6 +63,7 @@ const elements = {
   clearFiltersButton: document.querySelector("#clear-filters-button"),
   importButton: document.querySelector("#import-button"),
   fileInput: document.querySelector("#file-input"),
+  dropImportOverlay: document.querySelector("#drop-import-overlay"),
   scanButton: document.querySelector("#scan-button"),
   recognizeButton: document.querySelector("#recognize-button"),
   retryLoadButton: document.querySelector("#retry-load-button"),
@@ -1925,54 +1932,113 @@ function readFileDataUrl(file) {
 }
 
 async function importFiles(files) {
-  const validFiles = [...files].filter((file) => file.type.startsWith("image/"));
-  if (!validFiles.length) {
-    notify("沒有可匯入的影像檔案。", "error");
+  if (state.importing) {
+    notify("目前仍在匯入影像，請等待完成後再加入下一批。", "error");
     return;
   }
 
+  const { supported: validFiles, rejected } = partitionImageFiles(files);
+  if (!validFiles.length) {
+    notify("沒有可匯入的影像；僅支援 JPG、PNG、WebP 或 GIF。", "error");
+    return;
+  }
+
+  state.importing = true;
   elements.importButton.disabled = true;
+  elements.fileInput.disabled = true;
   const original = elements.importButton.innerHTML;
   elements.importButton.textContent = `匯入 0 / ${validFiles.length}`;
   let imported = 0;
   let lastAssetId = null;
   const errors = [];
 
-  for (const file of validFiles) {
-    try {
-      const data = await readFileDataUrl(file);
-      const payload = await api("/api/import", {
-        method: "POST",
-        body: JSON.stringify({
-          name: stripExtension(file.name),
-          type: file.type,
-          data,
-          sourceUrl: "",
-          rightsNote: "",
-        }),
-      });
-      imported += 1;
-      lastAssetId = String(payload?.asset?.id || lastAssetId || "");
-      elements.importButton.textContent = `匯入 ${imported} / ${validFiles.length}`;
-    } catch (error) {
-      errors.push(`${file.name}：${error.message}`);
+  try {
+    for (const file of validFiles) {
+      try {
+        const data = await readFileDataUrl(file);
+        const payload = await api("/api/import", {
+          method: "POST",
+          body: JSON.stringify({
+            name: stripExtension(file.name),
+            type: file.type,
+            data,
+            sourceUrl: "",
+            rightsNote: "",
+          }),
+        });
+        imported += 1;
+        lastAssetId = String(payload?.asset?.id || lastAssetId || "");
+        elements.importButton.textContent = `匯入 ${imported} / ${validFiles.length}`;
+      } catch (error) {
+        errors.push(`${file.name}：${error.message}`);
+      }
     }
-  }
 
-  elements.importButton.disabled = false;
-  elements.importButton.innerHTML = original;
-  elements.fileInput.value = "";
-  await loadBootstrap({ preserveSelection: false });
-  if (lastAssetId) await selectAsset(lastAssetId, { scroll: true });
+    await loadBootstrap({ preserveSelection: false });
+    if (lastAssetId) await selectAsset(lastAssetId, { scroll: true });
 
-  if (imported) {
-    notify(
-      `${imported} 張影像已匯入並選取；確認後按「送交 Codex」開始辨識。`,
-    );
+    if (imported) {
+      notify(
+        `${imported} 張影像已匯入並選取；確認後按「送交 Codex」開始辨識。`,
+      );
+    }
+    const failedCount = rejected.length + errors.length;
+    if (failedCount) {
+      const firstIssue =
+        errors[0] || `${rejected[0]?.name || "檔案"}：格式不支援`;
+      notify(`有 ${failedCount} 個檔案未匯入：${firstIssue}`, "error");
+    }
+  } finally {
+    state.importing = false;
+    elements.importButton.disabled = false;
+    elements.importButton.innerHTML = original;
+    elements.fileInput.disabled = false;
+    elements.fileInput.value = "";
   }
-  if (errors.length) {
-    notify(`有 ${errors.length} 張未匯入：${errors[0]}`, "error");
+}
+
+function setDropImportActive(active) {
+  elements.dropImportOverlay.hidden = !active;
+}
+
+function resetDropImport() {
+  state.dragDepth = 0;
+  setDropImportActive(false);
+}
+
+function handleFileDragEnter(event) {
+  if (!hasDraggedFiles(event.dataTransfer)) return;
+  event.preventDefault();
+  state.dragDepth += 1;
+  if (!state.importing) setDropImportActive(true);
+}
+
+function handleFileDragOver(event) {
+  if (!hasDraggedFiles(event.dataTransfer)) return;
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = state.importing ? "none" : "copy";
   }
+}
+
+function handleFileDragLeave(event) {
+  if (!hasDraggedFiles(event.dataTransfer)) return;
+  state.dragDepth = Math.max(0, state.dragDepth - 1);
+  if (state.dragDepth === 0) setDropImportActive(false);
+}
+
+function handleFileDrop(event) {
+  if (!hasDraggedFiles(event.dataTransfer)) return;
+  event.preventDefault();
+  const files = event.dataTransfer?.files || [];
+  resetDropImport();
+  importFilesSafely(files);
+}
+
+function importFilesSafely(files) {
+  importFiles(files).catch((error) => {
+    notify(`匯入影像時發生錯誤：${error.message}`, "error");
+  });
 }
 
 async function scanFolder() {
@@ -2195,8 +2261,14 @@ elements.sortSelect.addEventListener("change", () => {
 elements.clearFiltersButton.addEventListener("click", clearFilters);
 elements.importButton.addEventListener("click", () => elements.fileInput.click());
 elements.fileInput.addEventListener("change", () => {
-  if (elements.fileInput.files?.length) importFiles(elements.fileInput.files);
+  if (elements.fileInput.files?.length) importFilesSafely(elements.fileInput.files);
 });
+window.addEventListener("dragenter", handleFileDragEnter);
+window.addEventListener("dragover", handleFileDragOver);
+window.addEventListener("dragleave", handleFileDragLeave);
+window.addEventListener("drop", handleFileDrop);
+window.addEventListener("dragend", resetDropImport);
+window.addEventListener("blur", resetDropImport);
 elements.scanButton.addEventListener("click", scanFolder);
 elements.recognizeButton.addEventListener("click", () =>
   analyzeAssets(currentAnalyzeIds()),

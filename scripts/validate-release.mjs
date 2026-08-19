@@ -55,10 +55,12 @@ const requiredFiles = [
   "metadata.yml",
   "package.json",
   "public/app.js",
+  "public/drop-import.js",
   "scripts/smoke-test.mjs",
   "server.mjs",
   "src/db.mjs",
   "tests/library.test.mjs",
+  "tests/drop-import.test.mjs",
 ];
 
 const files = await walk(root);
