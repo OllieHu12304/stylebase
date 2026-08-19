@@ -381,6 +381,63 @@ svg {
   color: #767a76;
 }
 
+.active-tag-filters {
+  display: flex;
+  min-width: 0;
+  max-width: 54%;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.active-tag-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.active-tag-filter,
+.active-tag-filter-clear {
+  flex: 0 0 auto;
+  min-height: 26px;
+  border: 1px solid var(--blue);
+  padding: 3px 6px;
+  color: var(--blue-deep);
+  background: var(--blue-soft);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.active-tag-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.active-tag-filter:hover {
+  color: #fff;
+  background: var(--blue-deep);
+}
+
+.active-tag-filter .icon {
+  width: 11px;
+  height: 11px;
+}
+
+.active-tag-filter-clear {
+  border-color: transparent;
+  color: var(--muted);
+  background: transparent;
+}
+
+.active-tag-filter-clear:hover {
+  color: var(--blue-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .search-form kbd {
   min-width: 23px;
   border: 1px solid var(--rule);
@@ -1310,9 +1367,14 @@ svg {
   line-height: 1.3;
 }
 
-.tag-chip > span {
+.tag-filter-button {
+  min-width: 0;
+  border: 0;
   padding: 5px 7px;
+  color: inherit;
+  background: transparent;
   overflow-wrap: anywhere;
+  text-align: start;
 }
 
 .tag-chip--custom {
@@ -1321,7 +1383,18 @@ svg {
   background: var(--blue-soft);
 }
 
-.tag-chip button {
+.tag-chip.is-active {
+  border-color: var(--blue-deep);
+  color: #fff;
+  background: var(--blue-deep);
+}
+
+.tag-filter-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.tag-chip [data-remove-custom-tag] {
   display: grid;
   width: 26px;
   min-height: 26px;
@@ -1333,12 +1406,12 @@ svg {
   background: transparent;
 }
 
-.tag-chip button:hover {
+.tag-chip [data-remove-custom-tag]:hover {
   color: #fff;
-  background: var(--blue-deep);
+  background: var(--red);
 }
 
-.tag-chip button .icon {
+.tag-chip [data-remove-custom-tag] .icon {
   width: 12px;
   height: 12px;
 }
@@ -2126,6 +2199,10 @@ svg {
 
   .search-form kbd {
     display: none;
+  }
+
+  .active-tag-filters {
+    max-width: 48%;
   }
 
   .workspace-heading {

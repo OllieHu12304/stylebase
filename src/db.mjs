@@ -987,6 +987,26 @@ export function createCatalog(dbPath) {
       parameters.push(ftsQuery);
     }
 
+    const tags = normalizeFilterList(pick(filters, "tags", "tag"));
+    for (const tag of tags) {
+      where.push(`(
+        EXISTS (
+          SELECT 1
+          FROM json_each(a.custom_tags_json) custom_tag
+          WHERE TRIM(CAST(custom_tag.value AS TEXT)) = ? COLLATE NOCASE
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM analyses tag_analysis,
+               json_each(tag_analysis.tags_json) detected_tag
+          WHERE tag_analysis.asset_id = a.id
+            AND tag_analysis.is_current = 1
+            AND TRIM(CAST(detected_tag.value AS TEXT)) = ? COLLATE NOCASE
+        )
+      )`);
+      parameters.push(tag, tag);
+    }
+
     const statuses = normalizeFilterList(filters.status);
     if (statuses.length > 0) {
       const statusPlaceholders = placeholders(statuses.length);

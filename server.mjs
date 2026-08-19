@@ -260,6 +260,7 @@ async function handleApi(request, response, url) {
   if (method === "GET" && pathname === "/api/assets") {
     const filters = {
       query: url.searchParams.get("query") || "",
+      tags: url.searchParams.getAll("tag"),
       status: url.searchParams.get("status") || "",
       domain: url.searchParams.get("domain") || "",
       favorite: url.searchParams.get("favorite") || "",

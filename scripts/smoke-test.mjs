@@ -118,13 +118,15 @@ try {
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customTags: ["smoke-reference"] }),
+      body: JSON.stringify({
+        customTags: ["smoke-reference", "smoke-secondary"],
+      }),
       signal: AbortSignal.timeout(20_000),
     },
   );
   const tagged = await tagResponse.json();
   const tagSearchResponse = await fetch(
-    `${baseUrl}/api/assets?query=${encodeURIComponent("smoke-reference")}`,
+    `${baseUrl}/api/assets?tag=${encodeURIComponent("smoke-reference")}&tag=${encodeURIComponent("smoke-secondary")}`,
     { signal: AbortSignal.timeout(20_000) },
   );
   const tagSearch = await tagSearchResponse.json();

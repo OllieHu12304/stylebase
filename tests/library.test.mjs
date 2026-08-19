@@ -210,6 +210,50 @@ test("custom tags persist independently and participate in search", async (t) =>
   );
 });
 
+test("tag filters match exact detected or custom tags with AND semantics", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stylebase-tag-filter-"));
+  const catalog = createCatalog(path.join(root, "catalog.sqlite"));
+  t.after(async () => {
+    catalog.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const addAsset = (index, detectedTags, customTags) => {
+    const { asset } = catalog.upsertAsset({
+      sha256: String(index).repeat(64),
+      relativePath: `reference-${index}.png`,
+      fileName: `reference-${index}.png`,
+      mimeType: "image/png",
+    });
+    catalog.saveAnalysis(asset.id, {
+      analysis: {
+        summary: `Reference ${index}`,
+        tags: detectedTags,
+      },
+    });
+    return catalog.updateAsset(asset.id, { customTags });
+  };
+
+  const mobileCommerce = addAsset(1, ["mobile", "commerce"], ["高優先"]);
+  addAsset(2, ["mobile"], ["editorial"]);
+  addAsset(3, ["mobile-first", "commerce"], ["高優先"]);
+
+  assert.deepEqual(
+    catalog.listAssets({ tags: ["mobile", "commerce"] }).items.map((asset) =>
+      asset.id,
+    ),
+    [mobileCommerce.id],
+  );
+  assert.deepEqual(
+    catalog.listAssets({ tags: ["mobile", "高優先"] }).items.map((asset) =>
+      asset.id,
+    ),
+    [mobileCommerce.id],
+  );
+  assert.equal(catalog.listAssets({ tags: ["MOBILE"] }).total, 2);
+  assert.equal(catalog.listAssets({ tags: ["mobile-first"] }).total, 1);
+});
+
 test("createCatalog migrates a v1 asset database without losing records", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stylebase-migration-"));
   const dbPath = path.join(root, "catalog.sqlite");

@@ -30,11 +30,13 @@ const state = {
   selectedIds: new Set(),
   lastAnchorId: null,
   query: "",
+  tagFilters: [],
   discipline: "",
   status: "",
   sort: "newest",
   queueExpanded: false,
   searchTimer: null,
+  assetRequestVersion: 0,
   pollTimer: null,
   dragDepth: 0,
   importing: false,
@@ -64,6 +66,7 @@ const elements = {
   viewKicker: document.querySelector("#view-kicker"),
   searchForm: document.querySelector("#search-form"),
   searchInput: document.querySelector("#search-input"),
+  activeTagFilters: document.querySelector("#active-tag-filters"),
   disciplineFilter: document.querySelector("#discipline-filter"),
   statusFilter: document.querySelector("#status-filter"),
   sortSelect: document.querySelector("#sort-select"),
@@ -244,6 +247,11 @@ function normalizeTagValues(value) {
 
 function tagsFromInput(value) {
   return normalizeTagValues(String(value || "").split(/[,，\n]+/));
+}
+
+function tagFilterIsActive(tag) {
+  const key = String(tag || "").toLocaleLowerCase();
+  return state.tagFilters.some((item) => item.toLocaleLowerCase() === key);
 }
 
 function normalizeAsset(raw) {
@@ -778,11 +786,19 @@ async function loadBootstrap({ preserveSelection = true } = {}) {
     const bootstrap = await api("/api/bootstrap");
     const rawAssets = listFrom(bootstrap?.assets, ["items", "assets", "data"]);
     const rawJobs = listFrom(bootstrap?.jobs, ["items", "jobs", "data"]);
+    const hasAssetFilters = Boolean(
+      state.query ||
+        state.tagFilters.length ||
+        state.status ||
+        state.activeCollectionId,
+    );
 
-    state.assets = rawAssets.map(normalizeAsset);
-    state.resultTotal =
-      finiteNumber(bootstrap?.assets?.total, bootstrap?.assets?.count) ??
-      state.assets.length;
+    if (!hasAssetFilters) {
+      state.assets = rawAssets.map(normalizeAsset);
+      state.resultTotal =
+        finiteNumber(bootstrap?.assets?.total, bootstrap?.assets?.count) ??
+        state.assets.length;
+    }
     state.libraryTotal =
       finiteNumber(
         bootstrap?.stats?.assets,
@@ -803,6 +819,7 @@ async function loadBootstrap({ preserveSelection = true } = {}) {
     elements.railStatus.textContent = "本地連線";
 
     if (
+      !hasAssetFilters &&
       preserveSelection &&
       state.selectedId &&
       !state.assets.some((asset) => asset.id === state.selectedId)
@@ -811,6 +828,7 @@ async function loadBootstrap({ preserveSelection = true } = {}) {
     }
 
     renderAll();
+    if (hasAssetFilters) await refreshAssets();
   } catch (error) {
     state.loading = false;
     state.error = error;
@@ -959,6 +977,7 @@ function activeCollection() {
 function renderAll() {
   renderLoading();
   renderViewHeading();
+  renderActiveTagFilters();
   renderCounts();
   renderProviderState();
   renderCollectionNav();
@@ -968,6 +987,33 @@ function renderAll() {
   renderQueue();
   renderSettings();
   updateNavState();
+}
+
+function renderActiveTagFilters() {
+  const tags = normalizeTagValues(state.tagFilters);
+  elements.activeTagFilters.hidden = tags.length === 0;
+  elements.activeTagFilters.innerHTML = tags.length
+    ? `${tags
+        .map(
+          (tag) => `
+            <button
+              class="active-tag-filter"
+              type="button"
+              data-tag-filter="${escapeHTML(tag)}"
+              aria-label="移除標籤索引：${escapeHTML(tag)}"
+              title="移除標籤索引"
+            >
+              <span>${escapeHTML(tag)}</span>
+              <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+            </button>`,
+        )
+        .join("")}
+       <button
+         class="active-tag-filter-clear"
+         type="button"
+         data-clear-tag-filters
+       >清除</button>`
+    : "";
 }
 
 function renderViewHeading() {
@@ -1101,6 +1147,7 @@ function renderGallery() {
     state.view === "library" &&
     !state.activeCollectionId &&
     !state.query &&
+    state.tagFilters.length === 0 &&
     !state.discipline &&
     !state.status;
   const renderedAssets = useSynthetic ? state.syntheticAssets : assets;
@@ -1110,9 +1157,12 @@ function renderGallery() {
     : state.view === "inbox"
       ? "待整理"
       : "素材庫";
+  const tagFilterSummary = state.tagFilters.length
+    ? ` · ${formatNumber(state.tagFilters.length)} 個標籤交集`
+    : "";
   elements.resultSummary.textContent = useSynthetic
     ? "資料庫目前為空 · 顯示 8 張合成介面研究"
-    : `${contextLabel} · ${formatNumber(assets.length)} 張影像`;
+    : `${contextLabel} · ${formatNumber(state.resultTotal)} 張影像${tagFilterSummary}`;
 
   if (!renderedAssets.length) {
     elements.gallery.innerHTML = `
@@ -1463,9 +1513,20 @@ function renderTags(asset, detectedTags) {
     tags.length
       ? `<div class="tag-list" role="list">${tags
           .map(
-            (tag) => `
-              <span class="tag-chip ${className}" role="listitem">
-                <span>${escapeHTML(tag)}</span>
+            (tag) => {
+              const active = tagFilterIsActive(tag);
+              return `
+              <span class="tag-chip ${className} ${active ? "is-active" : ""}" role="listitem">
+                <button
+                  class="tag-filter-button"
+                  type="button"
+                  data-tag-filter="${escapeHTML(tag)}"
+                  aria-pressed="${String(active)}"
+                  aria-label="${
+                    active ? "移除標籤索引" : "加入標籤索引"
+                  }：${escapeHTML(tag)}"
+                  title="${active ? "移除" : "加入"}標籤索引"
+                >${escapeHTML(tag)}</button>
                 ${
                   removable
                     ? `<button
@@ -1477,7 +1538,8 @@ function renderTags(asset, detectedTags) {
                       ><svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg></button>`
                     : ""
                 }
-              </span>`,
+              </span>`;
+            },
           )
           .join("")}</div>`
       : '<p class="tag-empty">尚無標籤</p>';
@@ -2079,28 +2141,37 @@ function renderSettings() {
 }
 
 async function refreshAssets({ selectId = null } = {}) {
+  const requestVersion = ++state.assetRequestVersion;
   const params = new URLSearchParams({
     limit: "200",
     sort: state.sort,
   });
   if (state.query) params.set("query", state.query);
+  for (const tag of state.tagFilters) params.append("tag", tag);
   if (state.status) params.set("status", state.status);
   if (state.activeCollectionId) {
     params.set("collectionId", state.activeCollectionId);
   }
 
   const result = await api(`/api/assets?${params.toString()}`);
+  if (requestVersion !== state.assetRequestVersion) return false;
   state.assets = listFrom(result, ["items", "assets", "data"]).map(normalizeAsset);
   const selectionStillExists =
     !state.selectedId || Boolean(assetById(state.selectedId));
   if (!selectionStillExists) state.selectedId = null;
   state.resultTotal =
     finiteNumber(result?.total, result?.count) ?? state.assets.length;
-  if (!state.query && !state.status && !state.activeCollectionId) {
+  if (
+    !state.query &&
+    !state.tagFilters.length &&
+    !state.status &&
+    !state.activeCollectionId
+  ) {
     state.libraryTotal = state.resultTotal;
   }
   renderAll();
   if (selectId) await selectAsset(selectId, { scroll: true });
+  return true;
 }
 
 async function refreshJobs() {
@@ -2672,6 +2743,7 @@ async function openCollection(id) {
 
 function clearFilters() {
   state.query = "";
+  state.tagFilters = [];
   state.discipline = "";
   state.status = "";
   state.sort = "newest";
@@ -2682,6 +2754,34 @@ function clearFilters() {
   refreshAssets().catch((error) =>
     notify(`無法清除條件：${error.message}`, "error"),
   );
+}
+
+async function toggleTagFilter(value) {
+  const tag = normalizeTagValues([value])[0];
+  if (!tag) return;
+  const key = tag.toLocaleLowerCase();
+  const active = state.tagFilters.some(
+    (item) => item.toLocaleLowerCase() === key,
+  );
+  state.tagFilters = active
+    ? state.tagFilters.filter((item) => item.toLocaleLowerCase() !== key)
+    : [...state.tagFilters, tag];
+  renderActiveTagFilters();
+  const applied = await refreshAssets();
+  if (!applied) return;
+  notify(
+    state.tagFilters.length
+      ? `已套用 ${formatNumber(state.tagFilters.length)} 個標籤索引；結果需符合全部標籤。`
+      : "已清除標籤索引。",
+  );
+}
+
+async function clearTagFilters() {
+  if (!state.tagFilters.length) return;
+  state.tagFilters = [];
+  renderActiveTagFilters();
+  const applied = await refreshAssets();
+  if (applied) notify("已清除全部標籤索引。");
 }
 
 function showDialog(dialog) {
@@ -3044,6 +3144,25 @@ document.addEventListener("click", async (event) => {
   const exportAgentButton = target.closest("[data-export-agent]");
   if (exportAgentButton) {
     await copyAgentPrompt(exportAgentButton.dataset.exportAgent);
+    return;
+  }
+
+  const tagFilterButton = target.closest("[data-tag-filter]");
+  if (tagFilterButton) {
+    try {
+      await toggleTagFilter(tagFilterButton.dataset.tagFilter);
+    } catch (error) {
+      notify(`無法套用標籤索引：${error.message}`, "error");
+    }
+    return;
+  }
+
+  if (target.closest("[data-clear-tag-filters]")) {
+    try {
+      await clearTagFilters();
+    } catch (error) {
+      notify(`無法清除標籤索引：${error.message}`, "error");
+    }
     return;
   }
 
