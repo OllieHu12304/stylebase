@@ -164,6 +164,18 @@ svg {
   border: 0;
 }
 
+.clipboard-fallback {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .skip-link {
   position: fixed;
   z-index: 200;
@@ -1428,6 +1440,11 @@ svg {
 
 .inspector-actions {
   padding: 12px 14px;
+}
+
+.agent-export-button .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .codex-disclosure {

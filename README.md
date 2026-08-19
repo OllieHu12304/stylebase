@@ -10,6 +10,7 @@ Stylebase 是一套 local-first 視覺參考資料庫。圖片與 SQLite 資料�
 - 以 SHA-256 去重，建立 SQLite 索引與全文搜尋。
 - 依設計領域、風格、色票、收藏與分析狀態篩選。
 - 透過 Codex 產生 Visual DNA、構圖／字體／色彩描述、實作建議與 Prompt Kit。
+- 一鍵把最新 Codex 分析、原圖路徑與設計約束整理成可貼給 Agent 的 Markdown Prompt。
 - 保留來源網址、作者、授權備註與人工修正空間。
 - 在素材上按右鍵即可檢視、加入批次、送交分析或移到可復原的本機垃圾桶。
 - 服務只綁定 `127.0.0.1`，不對區域網路或網際網路公開。
@@ -81,8 +82,9 @@ codex login status
 3. 選取圖片後按「送交 Codex」。
 4. 工作會出現在「Codex 分析佇列」；同一時間只執行一個工作。
 5. 完成後檢查並修正 AI 分類、描述與提示詞。
-6. 補上來源、作者與授權備註，避免把靈感誤認成可直接複製的資產。
-7. 不需要的素材可按右鍵選擇「移到垃圾桶」；原圖會保留在 `library/trash`。
+6. 按「複製 Agent Prompt」，貼入 UIUX 專案的 Agent 對話並補上本次任務。
+7. 補上來源、作者與授權備註，避免把靈感誤認成可直接複製的資產。
+8. 不需要的素材可按右鍵選擇「移到垃圾桶」；原圖會保留在 `library/trash`。
 
 ## 資料與隱私邊界
 
@@ -99,6 +101,7 @@ stylebase-design-inspiration-library/
 
 - 匯入、掃描、搜尋不會呼叫 AI。
 - 只有按「送交 Codex」才會把該張圖片傳至 Codex 服務。
+- 「複製 Agent Prompt」只寫入本機剪貼簿；貼到其他服務前請先檢查本機路徑、來源與筆記。
 - Stylebase 不保存 API Key；它沿用本機 Codex CLI 的登入狀態。
 - Agent 工作採一次性 session、唯讀 sandbox 與嚴格 JSON Schema。
 - `data/`、`.env`、SQLite 檔與 `library/inbox`、`library/trash` 圖片都不會提交到 Git。

@@ -1,5 +1,9 @@
 import { beginPendingButtons } from "./button-state.js";
 import {
+  buildAgentPrompt,
+  hasExportableAnalysis,
+} from "./agent-prompt.js";
+import {
   hasDraggedFiles,
   partitionImageFiles,
 } from "./drop-import.js";
@@ -478,6 +482,13 @@ function normalizedAnalysis(asset) {
       "",
     model:
       record.model || asset.analysisModel || asset.analysis_model || data.model || "",
+    version:
+      record.version ||
+      record.analysisVersion ||
+      record.analysis_version ||
+      asset.analysisVersion ||
+      asset.analysis_version ||
+      null,
     promptVersion:
       record.promptVersion ||
       record.prompt_version ||
@@ -1202,6 +1213,7 @@ function closeAssetContextMenu({ restoreFocus = false } = {}) {
 function renderAssetContextMenu(asset) {
   const batchSelected = state.selectedIds.has(asset.id);
   const active = statusIsActive(asset.status);
+  const canExportAgentPrompt = hasExportableAnalysis(normalizedAnalysis(asset));
   const processing = ["running", "processing", "analyzing"].includes(
     asset.status,
   );
@@ -1232,6 +1244,15 @@ function renderAssetContextMenu(asset) {
           >
             <svg class="icon" aria-hidden="true"><use href="#icon-scan"></use></svg>
             <span>${active ? "已在 Codex 佇列" : analyzeLabel}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-context-action="export-agent"
+            ${canExportAgentPrompt ? "" : 'disabled title="Codex 分析完成後才能匯出"'}
+          >
+            <svg class="icon" aria-hidden="true"><use href="#icon-copy"></use></svg>
+            <span>${canExportAgentPrompt ? "複製 Agent Prompt" : "分析完成後可匯出"}</span>
           </button>
           <div class="asset-context-menu-separator" role="separator"></div>
           <button
@@ -1345,6 +1366,8 @@ async function runAssetContextAction(action) {
     toggleBatch(assetId);
   } else if (action === "analyze") {
     await analyzeAssets([assetId]);
+  } else if (action === "export-agent") {
+    await copyAgentPrompt(assetId);
   } else if (action === "trash") {
     openTrashDialog(assetId);
   }
@@ -1502,6 +1525,7 @@ function renderInspector() {
     Boolean(analysis.description) ||
     Object.keys(analysis.visualDna).length > 0 ||
     analysis.palette.length > 0;
+  const canExportAgentPrompt = hasExportableAnalysis(analysis);
   const imageUrl = safeMediaUrl(asset.mediaUrl);
   const dimensions =
     asset.width && asset.height ? `${asset.width} × ${asset.height}` : "—";
@@ -1576,11 +1600,25 @@ function renderInspector() {
           data-analyze-id="${escapeHTML(asset.id)}"
           ${inQueue ? "disabled" : ""}
         >${inQueue ? "已在 Codex 佇列" : "送交 Codex"}</button>
+        <button
+          class="button button--quiet agent-export-button"
+          type="button"
+          data-export-agent="${escapeHTML(asset.id)}"
+          ${canExportAgentPrompt ? "" : "disabled"}
+          title="${
+            canExportAgentPrompt
+              ? "複製包含原圖路徑與最新分析證據的 Agent Prompt"
+              : "Codex 分析完成後才能匯出"
+          }"
+        >
+          <svg class="icon" aria-hidden="true"><use href="#icon-copy"></use></svg>
+          ${canExportAgentPrompt ? "複製 Agent Prompt" : "尚無分析可匯出"}
+        </button>
         <span>${escapeHTML(analysis.provider || "codex")} · 信心度 ${escapeHTML(
           confidence,
         )}</span>
         <small class="codex-disclosure">
-          按下後會將此影像傳送至 Codex 服務分析；單純匯入不會上傳。
+          「送交 Codex」才會傳送影像；匯出只會把最新分析與本機原圖路徑複製到剪貼簿。
         </small>
       </div>`
         : ""
@@ -2351,16 +2389,67 @@ async function openSettings() {
   await refreshProvider();
 }
 
+async function writeClipboardText(value) {
+  const text = String(value || "");
+  if (!text) throw new Error("沒有可複製的內容。");
+  let clipboardError = null;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch (error) {
+    clipboardError = error;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.className = "clipboard-fallback";
+  document.body.append(textarea);
+  textarea.select();
+  try {
+    if (!document.execCommand("copy")) {
+      throw clipboardError || new Error("瀏覽器拒絕寫入剪貼簿。");
+    }
+  } finally {
+    textarea.remove();
+  }
+}
+
 async function copyPrompt(key) {
   const asset = assetById(state.selectedId);
   if (!asset) return;
   const prompt = normalizedAnalysis(asset).prompts[key];
   if (!prompt) return;
   try {
-    await navigator.clipboard.writeText(prompt);
+    await writeClipboardText(prompt);
     notify("提示詞已複製到剪貼簿。");
   } catch (error) {
     notify(`無法複製提示詞：${error.message}`, "error");
+  }
+}
+
+async function copyAgentPrompt(assetId) {
+  const asset = assetById(assetId);
+  if (!asset || asset.synthetic) return;
+  const analysis = normalizedAnalysis(asset);
+  if (!hasExportableAnalysis(analysis)) {
+    notify("這張素材尚未有可匯出的 Codex 分析；請先送交辨識。", "error");
+    return;
+  }
+  try {
+    const prompt = buildAgentPrompt({
+      asset,
+      analysis,
+      inboxPath: state.paths.inbox || "",
+    });
+    await writeClipboardText(prompt);
+    notify(
+      `Agent Prompt 已複製，共 ${formatNumber(prompt.length)} 個字元；貼上後補充本次任務即可。`,
+    );
+  } catch (error) {
+    notify(`無法匯出 Agent Prompt：${error.message}`, "error");
   }
 }
 
@@ -2634,6 +2723,12 @@ document.addEventListener("click", async (event) => {
   const copyButton = target.closest("[data-copy-prompt]");
   if (copyButton) {
     await copyPrompt(copyButton.dataset.copyPrompt);
+    return;
+  }
+
+  const exportAgentButton = target.closest("[data-export-agent]");
+  if (exportAgentButton) {
+    await copyAgentPrompt(exportAgentButton.dataset.exportAgent);
     return;
   }
 

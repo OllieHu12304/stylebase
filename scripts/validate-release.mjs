@@ -55,12 +55,14 @@ const requiredFiles = [
   "library/trash/.gitkeep",
   "metadata.yml",
   "package.json",
+  "public/agent-prompt.js",
   "public/app.js",
   "public/drop-import.js",
   "scripts/smoke-test.mjs",
   "server.mjs",
   "src/db.mjs",
   "tests/library.test.mjs",
+  "tests/agent-prompt.test.mjs",
   "tests/drop-import.test.mjs",
 ];
 

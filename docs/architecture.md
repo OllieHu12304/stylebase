@@ -4,7 +4,7 @@
 
 | 模組 | 責任 | 主要檔案 |
 |---|---|---|
-| Web UI | 匯入、瀏覽、搜尋、Inspector、佇列狀態 | `public/` |
+| Web UI | 匯入、瀏覽、搜尋、Inspector、Agent Prompt 匯出、佇列狀態 | `public/` |
 | HTTP Server | 靜態檔案、安全標頭、API、localhost bind | `server.mjs` |
 | Library | 掃描、格式檢查、SHA-256、檔案匯入與可復原移除 | `src/library.mjs` |
 | Database | SQLite Schema、查詢、FTS5、狀態 | `src/db.mjs` |
@@ -26,6 +26,7 @@ flowchart LR
     H --> D
     E -->|右鍵移除並確認| I["library/trash"]
     E -->|清理關聯| D
+    D -->|一鍵整理最新分析| J["Agent Prompt／本機剪貼簿"]
 ```
 
 ## 狀態與邊界
@@ -57,6 +58,13 @@ flowchart LR
 3. 原圖先移至 `library/trash`，再以 SQLite foreign key cascade 清理紀錄。
 4. 若資料庫清理失敗，系統會嘗試把原圖移回原本位置。
 5. 分析執行中的素材暫不允許移除，避免與 Agent 讀檔競態。
+
+### Agent Prompt 匯出路徑
+
+1. 只使用目前素材的最新 Codex 分析版本，不在匯出時重新呼叫模型。
+2. 前端整理本次任務 placeholder、原圖本機路徑、Visual DNA、色票、實作建議與避免事項。
+3. Prompt 明確要求 Agent 先檢查目標專案、把素材當成設計證據而非逐像素照抄。
+4. 結果只寫入本機剪貼簿；Stylebase 不會自動貼上、傳送或啟動另一個 Agent。
 
 ### 失敗路徑
 

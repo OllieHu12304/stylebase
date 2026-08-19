@@ -24,6 +24,7 @@ GitHub Actions 在 push 與 pull request 執行同一指令。
 - CSP-safe 色票輸出與 HEX 驗證。
 - Library 掃描、格式與去重行為。
 - 素材移入本機垃圾桶、還原與資料庫關聯清理。
+- Agent Prompt 的跨平台路徑、分析證據、任務邊界與缺少分析時的拒絕行為。
 - Codex Agent 命令組裝、輸出驗證、錯誤分類與暫存清理。
 
 ## 人工冷啟動驗收
@@ -45,6 +46,9 @@ GitHub Actions 在 push 與 pull request 執行同一指令。
 - [ ] 搜尋、收藏、人工欄位可用。
 - [ ] 在素材上按右鍵可開啟選單，滑鼠與 `Shift + F10` 都能操作。
 - [ ] 確認移除後素材離開索引，原圖存在 `library/trash`，取消時不改動資料。
+- [ ] 分析完成後可從 Inspector 與右鍵選單複製 Agent Prompt。
+- [ ] 匯出內容包含本次任務 placeholder、原圖路徑、最新分析版本、Visual DNA、成功條件與回覆格式。
+- [ ] 尚未分析的素材顯示停用原因，不會複製空白 Prompt。
 - [ ] 重啟後資料仍存在。
 
 ### C. Codex
