@@ -229,6 +229,23 @@ function fileNameFromPath(value) {
   return parts.at(-1) || "";
 }
 
+function normalizeTagValues(value) {
+  const seen = new Set();
+  return asArray(value)
+    .map((item) => String(item ?? "").normalize("NFKC").trim())
+    .filter((tag) => {
+      if (!tag) return false;
+      const key = tag.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function tagsFromInput(value) {
+  return normalizeTagValues(String(value || "").split(/[,，\n]+/));
+}
+
 function normalizeAsset(raw) {
   const asset = asObject(raw);
   const relativePath =
@@ -273,6 +290,7 @@ function normalizeAsset(raw) {
     sourceUrl: asset.sourceUrl || asset.source_url || "",
     rightsNote: asset.rightsNote || asset.rights_note || "",
     notes: asset.notes || "",
+    customTags: normalizeTagValues(asset.customTags || asset.custom_tags),
     favorite: Boolean(asset.favorite),
     collectionIds: asArray(
       asset.collectionIds || asset.collection_ids || asset.collections,
@@ -426,6 +444,14 @@ function normalizedAnalysis(asset) {
   )
     .map(readableValue)
     .filter(Boolean);
+  const tags = normalizeTagValues(
+    data.tags ||
+      data.styleTags ||
+      data.keywords ||
+      data.categories ||
+      data.designCategories ||
+      record.tags,
+  );
 
   const visualPrompt = readableValue(
     prompts.imageGeneration ||
@@ -468,6 +494,7 @@ function normalizedAnalysis(asset) {
     palette,
     whyItWorks,
     recipe,
+    tags,
     prompts: {
       visual: visualPrompt,
       implementation: implementationPrompt,
@@ -1429,6 +1456,70 @@ function renderList(items, className, fallback) {
     .join("")}</ol>`;
 }
 
+function renderTags(asset, detectedTags) {
+  const detected = normalizeTagValues(detectedTags);
+  const custom = normalizeTagValues(asset.customTags);
+  const tagChips = (tags, className, removable = false) =>
+    tags.length
+      ? `<div class="tag-list" role="list">${tags
+          .map(
+            (tag) => `
+              <span class="tag-chip ${className}" role="listitem">
+                <span>${escapeHTML(tag)}</span>
+                ${
+                  removable
+                    ? `<button
+                        type="button"
+                        data-remove-custom-tag="${escapeHTML(tag)}"
+                        data-asset-id="${escapeHTML(asset.id)}"
+                        aria-label="移除自訂標籤：${escapeHTML(tag)}"
+                        title="移除標籤"
+                      ><svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg></button>`
+                    : ""
+                }
+              </span>`,
+          )
+          .join("")}</div>`
+      : '<p class="tag-empty">尚無標籤</p>';
+
+  return `
+    <div class="tag-groups">
+      <div class="tag-group">
+        <div class="tag-group-heading">
+          <span>Codex 偵測</span>
+          <small>${formatNumber(detected.length)} 個</small>
+        </div>
+        ${tagChips(detected, "tag-chip--detected")}
+      </div>
+      <div class="tag-group">
+        <div class="tag-group-heading">
+          <span>我的標籤</span>
+          <small>${formatNumber(custom.length)} 個</small>
+        </div>
+        ${tagChips(custom, "tag-chip--custom", true)}
+      </div>
+      ${
+        asset.synthetic
+          ? ""
+          : `<form class="tag-entry-form" data-tag-form="${escapeHTML(asset.id)}">
+              <label for="custom-tag-input-${escapeHTML(asset.id)}">新增自訂標籤</label>
+              <div class="tag-entry-control">
+                <input
+                  id="custom-tag-input-${escapeHTML(asset.id)}"
+                  name="tag"
+                  maxlength="500"
+                  autocomplete="off"
+                  placeholder="例如：高對比、結帳流程"
+                  aria-describedby="custom-tag-help-${escapeHTML(asset.id)}"
+                />
+                <button class="button button--quiet" type="submit">新增</button>
+              </div>
+              <small id="custom-tag-help-${escapeHTML(asset.id)}">可用逗號一次加入多個；自訂標籤也能透過「/」搜尋。</small>
+            </form>`
+      }
+    </div>`;
+}
+
 function renderPromptBlock(label, key, value) {
   if (!value) {
     return `
@@ -1506,7 +1597,107 @@ function renderCollectionControls(asset) {
     }`;
 }
 
-function renderInspector() {
+function inspectorFieldKey(field) {
+  const form = field.closest("[data-tag-form], [data-metadata-form]");
+  if (!form) return "";
+  const formType = form.matches("[data-tag-form]") ? "tags" : "metadata";
+  const name = field.name || field.id;
+  return name ? `${formType}:${name}` : "";
+}
+
+function captureInspectorEditorState({
+  assetId: requestedAssetId = "",
+  activeField = null,
+} = {}) {
+  const active =
+    activeField instanceof HTMLElement ? activeField : document.activeElement;
+  const activeIsEditor =
+    active instanceof HTMLElement &&
+    elements.inspectorContent.contains(active) &&
+    active.matches("input, textarea, select");
+  if (!requestedAssetId && !activeIsEditor) return null;
+
+  const activeForm = activeIsEditor
+    ? active.closest("[data-tag-form], [data-metadata-form]")
+    : null;
+  const assetId =
+    requestedAssetId ||
+    activeForm?.dataset.tagForm ||
+    activeForm?.dataset.metadataForm ||
+    "";
+  if (!assetId) return null;
+
+  const fields = new Map();
+  for (const field of elements.inspectorContent.querySelectorAll(
+    "[data-tag-form] input, [data-metadata-form] input, [data-metadata-form] textarea, [data-metadata-form] select",
+  )) {
+    const key = inspectorFieldKey(field);
+    if (!key) continue;
+    fields.set(key, {
+      value: field.value,
+      checked: "checked" in field ? field.checked : undefined,
+    });
+  }
+
+  return {
+    assetId,
+    fields,
+    activeKey: activeIsEditor ? inspectorFieldKey(active) : "",
+    selectionStart:
+      activeIsEditor && typeof active.selectionStart === "number"
+        ? active.selectionStart
+        : null,
+    selectionEnd:
+      activeIsEditor && typeof active.selectionEnd === "number"
+        ? active.selectionEnd
+        : null,
+    selectionDirection:
+      activeIsEditor && active.selectionDirection
+        ? active.selectionDirection
+        : "none",
+    inspectorScrollTop: elements.inspector.scrollTop,
+  };
+}
+
+function restoreInspectorEditorState(snapshot, assetId) {
+  if (!snapshot || snapshot.assetId !== String(assetId)) return;
+  let activeField = null;
+  for (const field of elements.inspectorContent.querySelectorAll(
+    "[data-tag-form] input, [data-metadata-form] input, [data-metadata-form] textarea, [data-metadata-form] select",
+  )) {
+    const key = inspectorFieldKey(field);
+    const saved = snapshot.fields.get(key);
+    if (!saved) continue;
+    field.value = saved.value;
+    if (typeof saved.checked === "boolean" && "checked" in field) {
+      field.checked = saved.checked;
+    }
+    if (key === snapshot.activeKey) activeField = field;
+  }
+
+  elements.inspector.scrollTop = snapshot.inspectorScrollTop;
+  if (!(activeField instanceof HTMLElement)) return;
+  activeField.focus({ preventScroll: true });
+  if (
+    snapshot.selectionStart !== null &&
+    snapshot.selectionEnd !== null &&
+    typeof activeField.setSelectionRange === "function"
+  ) {
+    try {
+      activeField.setSelectionRange(
+        snapshot.selectionStart,
+        snapshot.selectionEnd,
+        snapshot.selectionDirection,
+      );
+    } catch {
+      // Some input types expose selection properties but reject setting them.
+    }
+  }
+}
+
+function renderInspector({ preserveEditor = true, editorState = null } = {}) {
+  const preservedEditorState =
+    editorState || (preserveEditor ? captureInspectorEditorState() : null);
   const asset = assetById(state.selectedId);
   if (!asset) {
     elements.inspectorEmpty.hidden = false;
@@ -1647,8 +1838,16 @@ function renderInspector() {
 
     <section class="inspector-section">
       <div class="inspector-section-heading">
-        <h3>色票</h3>
+        <h3>標籤</h3>
         <span class="section-index">A02</span>
+      </div>
+      ${renderTags(asset, analysis.tags)}
+    </section>
+
+    <section class="inspector-section">
+      <div class="inspector-section-heading">
+        <h3>色票</h3>
+        <span class="section-index">A03</span>
       </div>
       ${renderPalette(analysis.palette)}
     </section>
@@ -1656,7 +1855,7 @@ function renderInspector() {
     <section class="inspector-section">
       <div class="inspector-section-heading">
         <h3>為何有效</h3>
-        <span class="section-index">A03</span>
+        <span class="section-index">A04</span>
       </div>
       ${renderList(analysis.whyItWorks, "evidence-list", "尚未產生設計判讀。")}
     </section>
@@ -1664,7 +1863,7 @@ function renderInspector() {
     <section class="inspector-section">
       <div class="inspector-section-heading">
         <h3>實作 recipe</h3>
-        <span class="section-index">A04</span>
+        <span class="section-index">A05</span>
       </div>
       ${renderList(analysis.recipe, "recipe-list", "尚未產生實作步驟。")}
     </section>
@@ -1672,7 +1871,7 @@ function renderInspector() {
     <section class="inspector-section">
       <div class="inspector-section-heading">
         <h3>Prompt Kit</h3>
-        <span class="section-index">A05</span>
+        <span class="section-index">A06</span>
       </div>
       ${renderPromptBlock("視覺提示詞", "visual", analysis.prompts.visual)}
       ${renderPromptBlock(
@@ -1695,7 +1894,7 @@ function renderInspector() {
     <section class="inspector-section">
       <div class="inspector-section-heading">
         <h3>來源與分析證據</h3>
-        <span class="section-index">A06</span>
+        <span class="section-index">A07</span>
       </div>
       <dl class="provenance-list">
         <div><dt>相對路徑</dt><dd>${escapeHTML(asset.relativePath || "—")}</dd></div>
@@ -1714,7 +1913,7 @@ function renderInspector() {
       <section class="inspector-section">
         <div class="inspector-section-heading">
           <h3>收藏集</h3>
-          <span class="section-index">A07</span>
+          <span class="section-index">A08</span>
         </div>
         ${renderCollectionControls(asset)}
       </section>
@@ -1722,7 +1921,7 @@ function renderInspector() {
       <section class="inspector-section">
         <div class="inspector-section-heading">
           <h3>編輯 metadata</h3>
-          <span class="section-index">A08</span>
+          <span class="section-index">A09</span>
         </div>
         <form class="metadata-form" data-metadata-form="${escapeHTML(asset.id)}">
           <label class="field">
@@ -1753,6 +1952,7 @@ function renderInspector() {
     }`;
 
   updateAnalyzeControls();
+  restoreInspectorEditorState(preservedEditorState, asset.id);
 }
 
 function currentAnalyzeIds() {
@@ -2303,12 +2503,121 @@ async function saveMetadata(form) {
     const index = state.assets.findIndex((asset) => asset.id === id);
     if (index >= 0) state.assets[index] = updated;
     renderGallery();
-    renderInspector();
+    renderInspector({ preserveEditor: false });
     notify("Metadata 已儲存。");
   } catch (error) {
     notify(`Metadata 儲存失敗：${error.message}`, "error");
     submit.disabled = false;
     submit.textContent = original;
+  }
+}
+
+async function saveCustomTags(
+  assetId,
+  customTags,
+  successMessage,
+  { editorState = null, clearTagInput = false } = {},
+) {
+  const updated = normalizeAsset(
+    await api(`/api/assets/${encodeURIComponent(assetId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ customTags }),
+    }),
+  );
+  const index = state.assets.findIndex((asset) => asset.id === assetId);
+  if (index >= 0) state.assets[index] = updated;
+  if (clearTagInput && editorState?.fields.has("tags:tag")) {
+    editorState.fields.get("tags:tag").value = "";
+  }
+  renderInspector({ editorState });
+  notify(successMessage);
+}
+
+function focusCustomTagInput(assetId) {
+  requestAnimationFrame(() => {
+    document.getElementById(`custom-tag-input-${assetId}`)?.focus();
+  });
+}
+
+async function addCustomTags(form) {
+  const assetId = form.dataset.tagForm;
+  const asset = assetById(assetId);
+  const input = form.elements.tag;
+  const submit = form.querySelector('[type="submit"]');
+  if (!asset || !input || !submit) return;
+
+  const incoming = tagsFromInput(input.value);
+  if (!incoming.length) {
+    notify("請先輸入至少一個標籤。", "error");
+    input.focus();
+    return;
+  }
+  if (incoming.some((tag) => tag.length > 80)) {
+    notify("每個標籤最多 80 個字元。", "error");
+    input.focus();
+    return;
+  }
+
+  const existing = normalizeTagValues(asset.customTags);
+  const existingKeys = new Set(
+    [...existing, ...normalizedAnalysis(asset).tags].map((tag) =>
+      tag.toLocaleLowerCase(),
+    ),
+  );
+  const additions = incoming.filter(
+    (tag) => !existingKeys.has(tag.toLocaleLowerCase()),
+  );
+  if (!additions.length) {
+    notify("這些標籤已存在。", "error");
+    input.select();
+    return;
+  }
+  const nextTags = [...existing, ...additions];
+  if (nextTags.length > 50) {
+    notify("每張素材最多可加入 50 個自訂標籤。", "error");
+    return;
+  }
+
+  const editorState = captureInspectorEditorState({
+    assetId,
+    activeField: input,
+  });
+  submit.disabled = true;
+  try {
+    await saveCustomTags(
+      assetId,
+      nextTags,
+      `已新增 ${formatNumber(additions.length)} 個自訂標籤。`,
+      { editorState, clearTagInput: true },
+    );
+    focusCustomTagInput(assetId);
+  } catch (error) {
+    notify(`無法新增標籤：${error.message}`, "error");
+    submit.disabled = false;
+    input.focus();
+  }
+}
+
+async function removeCustomTag(assetId, tag, button) {
+  const asset = assetById(assetId);
+  if (!asset) return;
+  const target = String(tag || "").toLocaleLowerCase();
+  const nextTags = normalizeTagValues(asset.customTags).filter(
+    (item) => item.toLocaleLowerCase() !== target,
+  );
+  const editorState = captureInspectorEditorState({
+    assetId,
+    activeField: document.getElementById(`custom-tag-input-${assetId}`),
+  });
+  button.disabled = true;
+  try {
+    await saveCustomTags(assetId, nextTags, `已移除標籤「${tag}」。`, {
+      editorState,
+    });
+    focusCustomTagInput(assetId);
+  } catch (error) {
+    button.disabled = false;
+    notify(`無法移除標籤：${error.message}`, "error");
   }
 }
 
@@ -2637,11 +2946,17 @@ elements.retryNeedsSetupButton.addEventListener("click", async () => {
   }
 });
 
-document.addEventListener("submit", (event) => {
+document.addEventListener("submit", async (event) => {
+  const tagForm = event.target.closest("[data-tag-form]");
+  if (tagForm) {
+    event.preventDefault();
+    await addCustomTags(tagForm);
+    return;
+  }
   const form = event.target.closest("[data-metadata-form]");
   if (!form) return;
   event.preventDefault();
-  saveMetadata(form);
+  await saveMetadata(form);
 });
 
 document.addEventListener("click", async (event) => {
@@ -2729,6 +3044,16 @@ document.addEventListener("click", async (event) => {
   const exportAgentButton = target.closest("[data-export-agent]");
   if (exportAgentButton) {
     await copyAgentPrompt(exportAgentButton.dataset.exportAgent);
+    return;
+  }
+
+  const removeTagButton = target.closest("[data-remove-custom-tag]");
+  if (removeTagButton) {
+    await removeCustomTag(
+      removeTagButton.dataset.assetId,
+      removeTagButton.dataset.removeCustomTag,
+      removeTagButton,
+    );
     return;
   }
 

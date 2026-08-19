@@ -383,6 +383,7 @@ async function handleApi(request, response, url) {
         "sourceUrl",
         "rightsNote",
         "favorite",
+        "customTags",
       ]) {
         if (Object.hasOwn(body, key)) allowed[key] = body[key];
       }

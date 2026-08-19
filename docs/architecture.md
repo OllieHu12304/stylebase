@@ -19,7 +19,7 @@ flowchart LR
     A["library/inbox 或網頁匯入"] --> B["Library 掃描"]
     B --> C["SHA-256 去重"]
     C --> D["SQLite 索引"]
-    D --> E["搜尋／瀏覽／人工欄位"]
+    D --> E["搜尋／瀏覽／人工標籤與欄位"]
     E -->|使用者按送交| F["分析佇列"]
     F --> G["Codex CLI 一次性唯讀 Agent"]
     G --> H["JSON Schema 驗證"]
@@ -65,6 +65,14 @@ flowchart LR
 2. 前端整理本次任務 placeholder、原圖本機路徑、Visual DNA、色票、實作建議與避免事項。
 3. Prompt 明確要求 Agent 先檢查目標專案、把素材當成設計證據而非逐像素照抄。
 4. 結果只寫入本機剪貼簿；Stylebase 不會自動貼上、傳送或啟動另一個 Agent。
+
+### 標籤索引路徑
+
+1. Codex 偵測標籤保存在目前分析版本，重分析時可由新結果取代。
+2. 人工新增的 `customTags` 保存在素材紀錄，不會因重新分析而被覆蓋。
+3. Inspector 分開顯示兩種來源，只有人工標籤提供移除操作。
+4. FTS5 將兩種標籤合併索引，因此 `/` 搜尋可找回任一來源的標籤。
+5. Agent Prompt 匯出時會保留兩種標籤的來源差異。
 
 ### 失敗路徑
 

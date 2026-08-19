@@ -113,6 +113,29 @@ try {
     throw new Error(`Smoke import failed: ${importResponse.status}`);
   }
 
+  const tagResponse = await fetch(
+    `${baseUrl}/api/assets/${encodeURIComponent(imported.asset.id)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customTags: ["smoke-reference"] }),
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  const tagged = await tagResponse.json();
+  const tagSearchResponse = await fetch(
+    `${baseUrl}/api/assets?query=${encodeURIComponent("smoke-reference")}`,
+    { signal: AbortSignal.timeout(20_000) },
+  );
+  const tagSearch = await tagSearchResponse.json();
+  if (
+    !tagResponse.ok ||
+    tagged.customTags?.[0] !== "smoke-reference" ||
+    tagSearch.items?.[0]?.id !== imported.asset.id
+  ) {
+    throw new Error("Custom tag persistence or search indexing failed.");
+  }
+
   const deleteResponse = await fetch(
     `${baseUrl}/api/assets/${encodeURIComponent(imported.asset.id)}`,
     {
@@ -134,7 +157,7 @@ try {
   }
 
   console.log(
-    `Smoke test passed: HTTP 200, v${bootstrap.version}, CSP present, asset removal recoverable.`,
+    `Smoke test passed: HTTP 200, v${bootstrap.version}, CSP present, custom tags searchable, asset removal recoverable.`,
   );
 } catch (error) {
   if (output.trim()) console.error(output.trim());

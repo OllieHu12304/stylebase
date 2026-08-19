@@ -303,6 +303,32 @@ function normalizeFilterList(value) {
   ];
 }
 
+function normalizeTagList(value, label = "customTags") {
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${label} must be an array.`);
+  }
+  const tags = [];
+  const seen = new Set();
+  for (const item of value) {
+    if (typeof item !== "string") {
+      throw new TypeError(`${label} must contain only strings.`);
+    }
+    const tag = item.normalize("NFKC").trim();
+    if (!tag) continue;
+    if (tag.length > 80) {
+      throw new RangeError(`${label} items must be at most 80 characters.`);
+    }
+    const key = tag.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+    if (tags.length > 50) {
+      throw new RangeError(`${label} must contain at most 50 tags.`);
+    }
+  }
+  return tags;
+}
+
 function placeholders(count) {
   return Array.from({ length: count }, () => "?").join(", ");
 }
@@ -353,6 +379,7 @@ function assetFromRow(row) {
     rightsNote: row.rights_note,
     title: row.title,
     notes: row.notes,
+    customTags: jsonParse(row.custom_tags_json, []),
     favorite: Boolean(row.favorite),
     fileStatus: row.file_status,
     analysisStatus: row.analysis_status,
@@ -438,6 +465,7 @@ export function createCatalog(dbPath) {
       rights_note TEXT,
       title TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT '',
+      custom_tags_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(custom_tags_json)),
       favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1)),
       file_status TEXT NOT NULL DEFAULT 'available',
       analysis_status TEXT NOT NULL DEFAULT 'pending',
@@ -538,8 +566,19 @@ export function createCatalog(dbPath) {
       DELETE FROM asset_search WHERE asset_id = OLD.id;
     END;
 
-    PRAGMA user_version = 1;
   `);
+
+  const assetColumns = new Set(
+    db.prepare("PRAGMA table_info(assets)").all().map((row) => row.name),
+  );
+  if (!assetColumns.has("custom_tags_json")) {
+    db.exec(`
+      ALTER TABLE assets
+      ADD COLUMN custom_tags_json TEXT NOT NULL DEFAULT '[]'
+        CHECK (json_valid(custom_tags_json));
+    `);
+  }
+  db.exec("PRAGMA user_version = 2;");
 
   db.prepare(`
     INSERT OR IGNORE INTO settings(id, data_json, updated_at)
@@ -596,6 +635,7 @@ export function createCatalog(dbPath) {
           a.id,
           a.title,
           a.file_name,
+          a.custom_tags_json,
           an.summary,
           an.detail,
           an.tags_json,
@@ -630,7 +670,10 @@ export function createCatalog(dbPath) {
       row.file_name ?? "",
       row.summary ?? "",
       row.detail ?? "",
-      flattenText(jsonParse(row.tags_json, [])).join(" "),
+      [
+        ...flattenText(jsonParse(row.tags_json, [])),
+        ...flattenText(jsonParse(row.custom_tags_json, [])),
+      ].join(" "),
       flattenText(jsonParse(row.prompts_json, [])).join(" "),
     );
   }
@@ -1047,6 +1090,17 @@ export function createCatalog(dbPath) {
     if (Object.hasOwn(patch, "notes")) {
       assignments.push("notes = ?");
       parameters.push(optionalString(patch.notes, "notes", 100_000) ?? "");
+    }
+    const hasCustomTags =
+      Object.hasOwn(patch, "customTags") || Object.hasOwn(patch, "custom_tags");
+    if (hasCustomTags) {
+      assignments.push("custom_tags_json = ?");
+      parameters.push(
+        jsonStringify(
+          normalizeTagList(pick(patch, "customTags", "custom_tags")),
+          "customTags",
+        ),
+      );
     }
     if (Object.hasOwn(patch, "favorite")) {
       assignments.push("favorite = ?");
@@ -1714,14 +1768,21 @@ export function createCatalog(dbPath) {
     const tagCounts = new Map();
     const tagRows = db
       .prepare(`
-        SELECT tags_json
-        FROM analyses
-        WHERE is_current = 1
+        SELECT a.custom_tags_json, an.tags_json
+        FROM assets a
+        LEFT JOIN analyses an
+          ON an.asset_id = a.id
+         AND an.is_current = 1
       `)
       .all();
     for (const row of tagRows) {
       const tags = [
-        ...new Set(flattenText(jsonParse(row.tags_json, [])).map((tag) => tag.trim())),
+        ...new Set(
+          [
+            ...flattenText(jsonParse(row.tags_json, [])),
+            ...flattenText(jsonParse(row.custom_tags_json, [])),
+          ].map((tag) => tag.trim()),
+        ),
       ].filter(Boolean);
       for (const tag of tags) {
         tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);

@@ -59,6 +59,7 @@ test("buildAgentPrompt exports traceable visual evidence and task boundaries", (
       sourceUrl: "https://example.com/reference",
       rightsNote: "研究用，不重用品牌資產。",
       notes: "關注資訊層級。",
+      customTags: ["會員中心", "高對比"],
     },
     analysis,
     inboxPath: "/Stylebase/library/inbox",
@@ -69,6 +70,7 @@ test("buildAgentPrompt exports traceable visual evidence and task boundaries", (
   assert.match(prompt, /分析版本：2/);
   assert.match(prompt, /構圖：非對稱主視覺與模組網格/);
   assert.match(prompt, /#171918 — Ink/);
+  assert.match(prompt, /### 自訂標籤\n- 會員中心\n- 高對比/);
   assert.match(prompt, /## 成功條件/);
   assert.match(prompt, /## 回覆格式/);
   assert.doesNotMatch(prompt, /undefined|null/);

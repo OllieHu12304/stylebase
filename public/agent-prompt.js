@@ -146,7 +146,8 @@ export function buildAgentPrompt({ asset, analysis, inboxPath = "" }) {
     })
     .filter(Boolean);
   appendBullets(lines, "色票", palette);
-  appendBullets(lines, "標籤", data.tags);
+  appendBullets(lines, "Codex 標籤", data.tags);
+  appendBullets(lines, "自訂標籤", asset.customTags);
   appendBullets(lines, "元件", data.components);
   appendBullets(lines, "為何有效", analysis.whyItWorks);
   appendBullets(lines, "實作建議", analysis.recipe);

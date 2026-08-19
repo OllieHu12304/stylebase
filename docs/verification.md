@@ -49,6 +49,10 @@ GitHub Actions 在 push 與 pull request 執行同一指令。
 - [ ] 分析完成後可從 Inspector 與右鍵選單複製 Agent Prompt。
 - [ ] 匯出內容包含本次任務 placeholder、原圖路徑、最新分析版本、Visual DNA、成功條件與回覆格式。
 - [ ] 尚未分析的素材顯示停用原因，不會複製空白 Prompt。
+- [ ] Inspector 分開顯示 Codex 偵測標籤與自訂標籤。
+- [ ] 可用 Enter 新增、按移除控制刪除自訂標籤，重新整理後仍存在。
+- [ ] `/` 搜尋能以 Codex 標籤與自訂標籤找回同一筆素材。
+- [ ] 在 Inspector 輸入未儲存文字並等待超過 5.5 秒，草稿、焦點、游標與捲動位置不受背景輪詢影響。
 - [ ] 重啟後資料仍存在。
 
 ### C. Codex
