@@ -1093,6 +1093,16 @@ export function createCatalog(dbPath) {
     return getAsset(id);
   }
 
+  function deleteAsset(assetId) {
+    const id = positiveId(assetId, "assetId");
+    const asset = getAsset(id);
+    if (!asset) return null;
+    transaction(() => {
+      db.prepare("DELETE FROM assets WHERE id = ?").run(id);
+    });
+    return asset;
+  }
+
   function setFavorite(assetId, value) {
     const id = positiveId(assetId, "assetId");
     requireAssetRow(id);
@@ -1746,6 +1756,7 @@ export function createCatalog(dbPath) {
     getAsset,
     getAssetByRelativePath,
     updateAsset,
+    deleteAsset,
     setFavorite,
     saveAnalysis,
     enqueueAnalysis,

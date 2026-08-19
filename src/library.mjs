@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, open, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const MIME_BY_EXTENSION = new Map([
@@ -20,11 +20,11 @@ const EXTENSION_BY_MIME = new Map([
 
 const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
 
-export async function ensureLibraryDirectories({ dataDir, inboxDir }) {
-  await Promise.all([
-    mkdir(dataDir, { recursive: true }),
-    mkdir(inboxDir, { recursive: true }),
-  ]);
+export async function ensureLibraryDirectories({ dataDir, inboxDir, trashDir }) {
+  const directories = [dataDir, inboxDir, trashDir].filter(Boolean);
+  await Promise.all(
+    directories.map((directory) => mkdir(directory, { recursive: true })),
+  );
 }
 
 function toPosixRelative(root, absolutePath) {
@@ -319,4 +319,45 @@ export async function scanInbox({
 export function resolveAssetPath(inboxDir, relativePath) {
   const normalized = String(relativePath || "").split("/").join(path.sep);
   return ensureInside(inboxDir, path.join(inboxDir, normalized));
+}
+
+export async function moveAssetToTrash({
+  inboxDir,
+  trashDir,
+  relativePath,
+  assetId,
+}) {
+  const sourcePath = resolveAssetPath(inboxDir, relativePath);
+  try {
+    const fileStat = await stat(sourcePath);
+    if (!fileStat.isFile()) {
+      throw new Error("要移除的素材不是可讀取的檔案。");
+    }
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return { moved: false, sourcePath, trashPath: null, trashName: null };
+    }
+    throw error;
+  }
+
+  await mkdir(trashDir, { recursive: true });
+  const trashName = `${Date.now()}-${String(assetId)}-${randomUUID()}-${path.basename(
+    sourcePath,
+  )}`;
+  const trashPath = ensureInside(trashDir, path.join(trashDir, trashName));
+  await rename(sourcePath, trashPath);
+  return { moved: true, sourcePath, trashPath, trashName };
+}
+
+export async function restoreTrashedAsset({ sourcePath, trashPath }) {
+  if (!sourcePath || !trashPath) return false;
+  try {
+    await stat(sourcePath);
+    throw new Error("原始路徑已有同名檔案，無法自動還原素材。");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  await mkdir(path.dirname(sourcePath), { recursive: true });
+  await rename(trashPath, sourcePath);
+  return true;
 }

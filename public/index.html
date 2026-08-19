@@ -85,6 +85,15 @@ FORM: Operate/Experience hybrid; grounded direction position 3, registration-con
         <path d="M12 3 2.5 20h19z"></path>
         <path d="M12 8v5M12 17h.01"></path>
       </symbol>
+      <symbol id="icon-detail" viewBox="0 0 24 24">
+        <path d="M4 5h16v14H4z"></path>
+        <path d="M14 5v14"></path>
+        <path d="M7 9h4M7 13h4"></path>
+      </symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24">
+        <path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13"></path>
+        <path d="M10 11v5M14 11v5"></path>
+      </symbol>
     </svg>
 
     <div class="app-shell" id="app">
@@ -342,6 +351,43 @@ FORM: Operate/Experience hybrid; grounded direction position 3, registration-con
         <small>影像只會儲存在本機；不會自動送交 Codex</small>
       </div>
     </div>
+
+    <div
+      class="asset-context-menu"
+      id="asset-context-menu"
+      role="menu"
+      aria-label="素材操作"
+      hidden
+    ></div>
+
+    <dialog class="sheet-dialog" id="trash-dialog" aria-labelledby="trash-dialog-title">
+      <form id="trash-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="view-kicker">移除素材</p>
+            <h2 id="trash-dialog-title">移到 Stylebase 垃圾桶？</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-dialog aria-label="關閉">
+            <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+          </button>
+        </div>
+        <p class="trash-dialog-copy">
+          「<strong id="trash-asset-title">這張素材</strong>」將從目前索引移除。
+        </p>
+        <div class="trash-disclosure">
+          <strong>會移除</strong>
+          <span>素材紀錄、Codex 分析結果、佇列紀錄與收藏集關聯。</span>
+          <strong>仍會保留</strong>
+          <span>原始影像會移到 <code>library/trash</code>，需要時可人工移回 inbox 再掃描。</span>
+        </div>
+        <div class="dialog-actions">
+          <button class="button button--quiet" type="button" data-close-dialog>保留素材</button>
+          <button class="button button--danger" id="trash-confirm-button" type="submit">
+            移到垃圾桶
+          </button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog class="sheet-dialog" id="collection-dialog" aria-labelledby="collection-dialog-title">
       <form id="collection-form">

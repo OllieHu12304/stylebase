@@ -52,6 +52,7 @@ const requiredFiles = [
   "docs/verification.md",
   "lesson.md",
   "library/inbox/.gitkeep",
+  "library/trash/.gitkeep",
   "metadata.yml",
   "package.json",
   "public/app.js",
@@ -75,7 +76,9 @@ const forbiddenFiles = files.filter(
     file.startsWith("data/") ||
     /\.(?:sqlite|sqlite-shm|sqlite-wal|db|log)$/i.test(file) ||
     (file.startsWith("library/inbox/") &&
-      file !== "library/inbox/.gitkeep"),
+      file !== "library/inbox/.gitkeep") ||
+    (file.startsWith("library/trash/") &&
+      file !== "library/trash/.gitkeep"),
 );
 check(
   forbiddenFiles.length === 0,

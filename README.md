@@ -11,6 +11,7 @@ Stylebase 是一套 local-first 視覺參考資料庫。圖片與 SQLite 資料�
 - 依設計領域、風格、色票、收藏與分析狀態篩選。
 - 透過 Codex 產生 Visual DNA、構圖／字體／色彩描述、實作建議與 Prompt Kit。
 - 保留來源網址、作者、授權備註與人工修正空間。
+- 在素材上按右鍵即可檢視、加入批次、送交分析或移到可復原的本機垃圾桶。
 - 服務只綁定 `127.0.0.1`，不對區域網路或網際網路公開。
 
 ## 30 秒開始
@@ -81,12 +82,14 @@ codex login status
 4. 工作會出現在「Codex 分析佇列」；同一時間只執行一個工作。
 5. 完成後檢查並修正 AI 分類、描述與提示詞。
 6. 補上來源、作者與授權備註，避免把靈感誤認成可直接複製的資產。
+7. 不需要的素材可按右鍵選擇「移到垃圾桶」；原圖會保留在 `library/trash`。
 
 ## 資料與隱私邊界
 
 ```text
 stylebase-design-inspiration-library/
 ├─ library/inbox/       原始圖片；Git 預設忽略
+├─ library/trash/       已移除原圖；Git 預設忽略，可人工復原
 ├─ data/catalog.sqlite  本地 SQLite；Git 預設忽略
 ├─ public/              HTML、CSS、瀏覽器程式
 ├─ src/                 資料庫、掃描與 Codex Agent 介面
@@ -98,7 +101,7 @@ stylebase-design-inspiration-library/
 - 只有按「送交 Codex」才會把該張圖片傳至 Codex 服務。
 - Stylebase 不保存 API Key；它沿用本機 Codex CLI 的登入狀態。
 - Agent 工作採一次性 session、唯讀 sandbox 與嚴格 JSON Schema。
-- `data/`、`.env`、SQLite 檔與 `library/inbox` 圖片都不會提交到 Git。
+- `data/`、`.env`、SQLite 檔與 `library/inbox`、`library/trash` 圖片都不會提交到 Git。
 - 請勿分析機密、個資或沒有權利上傳的圖片。
 
 更多說明請讀[資料、隱私與圖片權利](docs/privacy-and-content-rights.md)。

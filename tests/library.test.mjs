@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { createCatalog } from "../src/db.mjs";
 import {
   ensureLibraryDirectories,
+  moveAssetToTrash,
   resolveAssetPath,
+  restoreTrashedAsset,
   saveUploadedImage,
   scanInbox,
 } from "../src/library.mjs";
@@ -95,4 +98,63 @@ test("resolveAssetPath refuses traversal outside the inbox", () => {
     () => resolveAssetPath(inbox, "../../outside.png"),
     /不在 Stylebase 圖片資料夾內/,
   );
+});
+
+test("moveAssetToTrash preserves the original image for manual recovery", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stylebase-library-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const dataDir = path.join(root, "data");
+  const inboxDir = path.join(root, "inbox");
+  const trashDir = path.join(root, "trash");
+  await ensureLibraryDirectories({ dataDir, inboxDir, trashDir });
+  const uploaded = await saveUploadedImage({
+    inboxDir,
+    name: "可復原素材.png",
+    type: "image/png",
+    data: ONE_PIXEL_PNG,
+  });
+
+  const moved = await moveAssetToTrash({
+    inboxDir,
+    trashDir,
+    relativePath: uploaded.relativePath,
+    assetId: 42,
+  });
+  assert.equal(moved.moved, true);
+  await assert.rejects(stat(uploaded.absolutePath), { code: "ENOENT" });
+  assert.deepEqual(await readdir(trashDir), [moved.trashName]);
+
+  assert.equal(await restoreTrashedAsset(moved), true);
+  assert.equal((await stat(uploaded.absolutePath)).isFile(), true);
+  assert.deepEqual(await readdir(trashDir), []);
+});
+
+test("deleteAsset removes dependent jobs and collection links", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stylebase-catalog-"));
+  const dataDir = path.join(root, "data");
+  const inboxDir = path.join(root, "inbox");
+  const catalog = createCatalog(path.join(dataDir, "catalog.sqlite"));
+  t.after(async () => {
+    catalog.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  await ensureLibraryDirectories({ dataDir, inboxDir });
+  await saveUploadedImage({
+    inboxDir,
+    name: "待移除素材.png",
+    type: "image/png",
+    data: ONE_PIXEL_PNG,
+  });
+  await scanInbox({ catalog, inboxDir, autoAnalyze: false });
+  const asset = catalog.listAssets({ limit: 10 }).items[0];
+  const collection = catalog.createCollection("測試收藏集");
+  catalog.addCollectionItem(collection.id, asset.id);
+  catalog.enqueueAnalysis(asset.id);
+
+  assert.equal(catalog.deleteAsset(asset.id)?.id, asset.id);
+  assert.equal(catalog.getAsset(asset.id), null);
+  assert.equal(catalog.listJobs({ assetId: asset.id }).total, 0);
+  assert.equal(catalog.getCollection(collection.id).itemCount, 0);
 });

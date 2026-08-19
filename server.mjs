@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import { createCatalog } from "./src/db.mjs";
 import {
   ensureLibraryDirectories,
+  moveAssetToTrash,
   resolveAssetPath,
+  restoreTrashedAsset,
   saveUploadedImage,
   scanInbox,
 } from "./src/library.mjs";
@@ -20,6 +22,7 @@ const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const INBOX_DIR = path.join(ROOT_DIR, "library", "inbox");
+const TRASH_DIR = path.join(ROOT_DIR, "library", "trash");
 const DB_PATH = path.join(DATA_DIR, "catalog.sqlite");
 const HOST = "127.0.0.1";
 const PORT = numberInRange(process.env.STYLEBASE_PORT, 4177, 1024, 65535);
@@ -40,11 +43,16 @@ const STATIC_MIME = new Map([
   [".ico", "image/x-icon"],
 ]);
 
-await ensureLibraryDirectories({ dataDir: DATA_DIR, inboxDir: INBOX_DIR });
+await ensureLibraryDirectories({
+  dataDir: DATA_DIR,
+  inboxDir: INBOX_DIR,
+  trashDir: TRASH_DIR,
+});
 const catalog = createCatalog(DB_PATH);
 
 let scanInFlight = null;
 let workerBusy = false;
+let maintenanceBusy = false;
 let watcher = null;
 let watcherTimer = null;
 let providerCache = null;
@@ -175,7 +183,7 @@ function scheduleScan() {
 }
 
 async function processNextJob() {
-  if (workerBusy) return;
+  if (workerBusy || maintenanceBusy) return;
   const job = catalog.claimNextJob();
   if (!job) return;
   workerBusy = true;
@@ -381,6 +389,48 @@ async function handleApi(request, response, url) {
       const asset = catalog.updateAsset(id, allowed);
       if (!asset) throw new ApiError(404, "找不到這筆圖片。");
       sendJson(response, 200, safeAsset(asset));
+      return true;
+    }
+    if (method === "DELETE") {
+      const asset = catalog.getAsset(id);
+      if (!asset) throw new ApiError(404, "找不到這筆圖片。");
+      if (asset.analysisStatus === "processing") {
+        throw new ApiError(
+          409,
+          "這張素材正在由 Codex 分析；請等待工作完成後再移除。",
+        );
+      }
+
+      maintenanceBusy = true;
+      let movedFile = null;
+      try {
+        movedFile = await moveAssetToTrash({
+          inboxDir: INBOX_DIR,
+          trashDir: TRASH_DIR,
+          relativePath: asset.relativePath,
+          assetId: asset.id,
+        });
+        const deleted = catalog.deleteAsset(id);
+        if (!deleted) throw new Error("素材索引已不存在。");
+      } catch (error) {
+        if (movedFile?.moved) {
+          try {
+            await restoreTrashedAsset(movedFile);
+          } catch (restoreError) {
+            console.error("[stylebase] unable to restore trashed asset", restoreError);
+          }
+        }
+        throw error;
+      } finally {
+        maintenanceBusy = false;
+      }
+
+      sendJson(response, 200, {
+        id: String(asset.id),
+        title: asset.title,
+        fileMoved: Boolean(movedFile?.moved),
+        trashName: movedFile?.trashName || null,
+      });
       return true;
     }
   }

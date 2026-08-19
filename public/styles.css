@@ -240,6 +240,75 @@ svg {
   color: var(--muted);
 }
 
+.asset-context-menu {
+  position: fixed;
+  z-index: 280;
+  width: min(254px, calc(100vw - 16px));
+  border: 1px solid var(--graphite);
+  padding: 4px;
+  background: var(--paper-raised);
+  box-shadow: 6px 8px 24px rgb(23 25 24 / 24%);
+}
+
+.asset-context-menu-heading {
+  display: block;
+  overflow: hidden;
+  border-bottom: 1px solid var(--rule);
+  padding: 7px 9px 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-context-menu button {
+  display: grid;
+  width: 100%;
+  min-height: 38px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 7px 9px;
+  background: transparent;
+  text-align: left;
+}
+
+.asset-context-menu button:hover,
+.asset-context-menu button:focus-visible {
+  background: var(--paper-muted);
+}
+
+.asset-context-menu button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.asset-context-menu button:disabled {
+  background: transparent;
+}
+
+.asset-context-menu button .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.asset-context-menu kbd {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.asset-context-menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--rule);
+}
+
+.asset-context-menu .context-menu-danger {
+  color: var(--red);
+}
+
 .topbar {
   grid-area: topbar;
   display: grid;
@@ -755,6 +824,11 @@ svg {
 .asset-card.is-batch-selected:not(.is-selected) {
   outline: 2px solid var(--blue);
   outline-offset: -4px;
+}
+
+.asset-card.is-context-target:not(.is-selected) {
+  outline: 2px solid var(--graphite);
+  outline-offset: -2px;
 }
 
 .asset-open {
@@ -1614,6 +1688,32 @@ svg {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 24px;
+}
+
+.trash-dialog-copy {
+  color: var(--graphite-2);
+  font-size: 14px;
+}
+
+.trash-disclosure {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin-top: 18px;
+  border-block: 1px solid var(--rule);
+  padding: 14px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.trash-disclosure strong {
+  color: var(--graphite);
+}
+
+.trash-disclosure code {
+  color: var(--graphite);
+  font-family: inherit;
+  font-weight: 650;
 }
 
 .settings-grid {

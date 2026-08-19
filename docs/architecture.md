@@ -6,7 +6,7 @@
 |---|---|---|
 | Web UI | 匯入、瀏覽、搜尋、Inspector、佇列狀態 | `public/` |
 | HTTP Server | 靜態檔案、安全標頭、API、localhost bind | `server.mjs` |
-| Library | 掃描、格式檢查、SHA-256、檔案匯入 | `src/library.mjs` |
+| Library | 掃描、格式檢查、SHA-256、檔案匯入與可復原移除 | `src/library.mjs` |
 | Database | SQLite Schema、查詢、FTS5、狀態 | `src/db.mjs` |
 | Analysis Contract | Prompt、JSON Schema、正規化與驗證 | `src/analysis-schema.mjs` |
 | Codex Adapter | CLI readiness、一次性 Agent、錯誤分類 | `src/codex-agent.mjs` |
@@ -24,6 +24,8 @@ flowchart LR
     F --> G["Codex CLI 一次性唯讀 Agent"]
     G --> H["JSON Schema 驗證"]
     H --> D
+    E -->|右鍵移除並確認| I["library/trash"]
+    E -->|清理關聯| D
 ```
 
 ## 狀態與邊界
@@ -47,6 +49,14 @@ flowchart LR
 7. 驗證完成事件與最終 JSON。
 8. 正規化後回寫資料庫。
 9. 刪除工作暫存目錄。
+
+### 移除路徑
+
+1. 使用者在素材上按右鍵並選擇「移到垃圾桶」。
+2. 確認視窗說明會清理的索引、分析、佇列與收藏關聯。
+3. 原圖先移至 `library/trash`，再以 SQLite foreign key cascade 清理紀錄。
+4. 若資料庫清理失敗，系統會嘗試把原圖移回原本位置。
+5. 分析執行中的素材暫不允許移除，避免與 Agent 讀檔競態。
 
 ### 失敗路徑
 

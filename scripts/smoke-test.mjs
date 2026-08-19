@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "stylebase-smoke-"));
+const ONE_PIXEL_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 async function reservePort() {
   return new Promise((resolve, reject) => {
@@ -96,8 +98,43 @@ try {
     throw new Error("Content-Security-Policy is missing.");
   }
 
+  const importResponse = await fetch(`${baseUrl}/api/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "smoke-removal",
+      type: "image/png",
+      data: `data:image/png;base64,${ONE_PIXEL_PNG}`,
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const imported = await importResponse.json();
+  if (!importResponse.ok || !imported.asset?.id) {
+    throw new Error(`Smoke import failed: ${importResponse.status}`);
+  }
+
+  const deleteResponse = await fetch(
+    `${baseUrl}/api/assets/${encodeURIComponent(imported.asset.id)}`,
+    {
+      method: "DELETE",
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  const removed = await deleteResponse.json();
+  const afterRemovalResponse = await fetch(`${baseUrl}/api/bootstrap`, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  const afterRemoval = await afterRemovalResponse.json();
+  const trashFiles = await readdir(path.join(temporaryRoot, "library", "trash"));
+  if (!deleteResponse.ok || removed.id !== String(imported.asset.id)) {
+    throw new Error(`Smoke removal failed: ${deleteResponse.status}`);
+  }
+  if (afterRemoval.assets?.items?.length !== 0 || trashFiles.length !== 1) {
+    throw new Error("Removed asset did not leave the index and enter local trash.");
+  }
+
   console.log(
-    `Smoke test passed: HTTP 200, v${bootstrap.version}, empty database, CSP present.`,
+    `Smoke test passed: HTTP 200, v${bootstrap.version}, CSP present, asset removal recoverable.`,
   );
 } catch (error) {
   if (output.trim()) console.error(output.trim());

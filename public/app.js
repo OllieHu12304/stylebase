@@ -37,6 +37,9 @@ const state = {
   syntheticAssets: [],
   inspectorReturnFocus: null,
   inspectorReturnAssetId: null,
+  contextMenuAssetId: null,
+  contextMenuReturnFocus: null,
+  trashCandidateId: null,
 };
 
 const elements = {
@@ -64,6 +67,11 @@ const elements = {
   importButton: document.querySelector("#import-button"),
   fileInput: document.querySelector("#file-input"),
   dropImportOverlay: document.querySelector("#drop-import-overlay"),
+  assetContextMenu: document.querySelector("#asset-context-menu"),
+  trashDialog: document.querySelector("#trash-dialog"),
+  trashForm: document.querySelector("#trash-form"),
+  trashAssetTitle: document.querySelector("#trash-asset-title"),
+  trashConfirmButton: document.querySelector("#trash-confirm-button"),
   scanButton: document.querySelector("#scan-button"),
   recognizeButton: document.querySelector("#recognize-button"),
   retryLoadButton: document.querySelector("#retry-load-button"),
@@ -520,9 +528,7 @@ function formatDate(value) {
 }
 
 function statusIsActive(status) {
-  return ["queued", "pending", "running", "processing", "analyzing"].includes(
-    status,
-  );
+  return ["queued", "running", "processing", "analyzing"].includes(status);
 }
 
 function statusNeedsAttention(status) {
@@ -1142,6 +1148,8 @@ function renderAssetCard(asset, index, total) {
         type="button"
         data-open-asset="${escapeHTML(asset.id)}"
         aria-label="檢視 ${escapeHTML(asset.title)}"
+        aria-haspopup="menu"
+        aria-keyshortcuts="Shift+F10"
         aria-pressed="${current}"
       >
         ${
@@ -1169,6 +1177,177 @@ function assetById(id) {
     state.syntheticAssets.find((asset) => asset.id === id) ||
     null
   );
+}
+
+function closeAssetContextMenu({ restoreFocus = false } = {}) {
+  if (elements.assetContextMenu.hidden) return;
+  const returnFocus = state.contextMenuReturnFocus;
+  const assetId = state.contextMenuAssetId;
+  elements.assetContextMenu.hidden = true;
+  elements.assetContextMenu.innerHTML = "";
+  elements.assetContextMenu.style.removeProperty("left");
+  elements.assetContextMenu.style.removeProperty("top");
+  state.contextMenuAssetId = null;
+  state.contextMenuReturnFocus = null;
+  if (assetId) {
+    elements.gallery
+      .querySelector(`[data-asset-id="${CSS.escape(assetId)}"]`)
+      ?.classList.remove("is-context-target");
+  }
+  if (restoreFocus && returnFocus instanceof HTMLElement && returnFocus.isConnected) {
+    requestAnimationFrame(() => returnFocus.focus({ preventScroll: true }));
+  }
+}
+
+function renderAssetContextMenu(asset) {
+  const batchSelected = state.selectedIds.has(asset.id);
+  const active = statusIsActive(asset.status);
+  const processing = ["running", "processing", "analyzing"].includes(
+    asset.status,
+  );
+  const analyzeLabel = ["ready", "complete", "completed"].includes(asset.status)
+    ? "重新送交 Codex"
+    : "送交 Codex";
+
+  return `
+    <strong class="asset-context-menu-heading">${escapeHTML(asset.title)}</strong>
+    <button type="button" role="menuitem" data-context-action="view">
+      <svg class="icon" aria-hidden="true"><use href="#icon-detail"></use></svg>
+      <span>檢視詳情</span>
+      <kbd>Enter</kbd>
+    </button>
+    ${
+      asset.synthetic
+        ? ""
+        : `
+          <button type="button" role="menuitem" data-context-action="batch">
+            <svg class="icon" aria-hidden="true"><use href="#icon-check"></use></svg>
+            <span>${batchSelected ? "移出批次" : "加入批次"}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-context-action="analyze"
+            ${active ? 'disabled title="這張素材已在 Codex 佇列中"' : ""}
+          >
+            <svg class="icon" aria-hidden="true"><use href="#icon-scan"></use></svg>
+            <span>${active ? "已在 Codex 佇列" : analyzeLabel}</span>
+          </button>
+          <div class="asset-context-menu-separator" role="separator"></div>
+          <button
+            class="context-menu-danger"
+            type="button"
+            role="menuitem"
+            data-context-action="trash"
+            ${processing ? 'disabled title="Codex 分析完成後才能移除"' : ""}
+          >
+            <svg class="icon" aria-hidden="true"><use href="#icon-trash"></use></svg>
+            <span>${processing ? "分析完成後可移除" : "移到垃圾桶…"}</span>
+          </button>`
+    }`;
+}
+
+function openAssetContextMenu(assetId, { x, y, returnFocus } = {}) {
+  const asset = assetById(assetId);
+  if (!asset) return;
+  closeAssetContextMenu();
+  state.contextMenuAssetId = asset.id;
+  state.contextMenuReturnFocus =
+    returnFocus instanceof HTMLElement ? returnFocus : null;
+  elements.assetContextMenu.innerHTML = renderAssetContextMenu(asset);
+  elements.assetContextMenu.hidden = false;
+
+  const card = elements.gallery.querySelector(
+    `[data-asset-id="${CSS.escape(asset.id)}"]`,
+  );
+  card?.classList.add("is-context-target");
+  const anchorRect = card?.getBoundingClientRect();
+  const menuRect = elements.assetContextMenu.getBoundingClientRect();
+  const margin = 8;
+  const requestedX = Number.isFinite(x) && x > 0 ? x : (anchorRect?.left ?? margin) + 24;
+  const requestedY = Number.isFinite(y) && y > 0 ? y : (anchorRect?.top ?? margin) + 24;
+  const left = Math.max(
+    margin,
+    Math.min(requestedX, window.innerWidth - menuRect.width - margin),
+  );
+  const top = Math.max(
+    margin,
+    Math.min(requestedY, window.innerHeight - menuRect.height - margin),
+  );
+  elements.assetContextMenu.style.left = `${Math.round(left)}px`;
+  elements.assetContextMenu.style.top = `${Math.round(top)}px`;
+  requestAnimationFrame(() => {
+    elements.assetContextMenu
+      .querySelector('button[role="menuitem"]:not([disabled])')
+      ?.focus({ preventScroll: true });
+  });
+}
+
+function moveContextMenuFocus(direction) {
+  const items = [
+    ...elements.assetContextMenu.querySelectorAll(
+      'button[role="menuitem"]:not([disabled])',
+    ),
+  ];
+  if (!items.length) return;
+  const current = items.indexOf(document.activeElement);
+  const next = current < 0 ? 0 : (current + direction + items.length) % items.length;
+  items[next].focus();
+}
+
+function openTrashDialog(assetId) {
+  const asset = assetById(assetId);
+  if (!asset || asset.synthetic) return;
+  if (["running", "processing", "analyzing"].includes(asset.status)) {
+    notify("這張素材正在由 Codex 分析；工作完成後才能移除。", "error");
+    return;
+  }
+  state.trashCandidateId = asset.id;
+  elements.trashAssetTitle.textContent = asset.title;
+  showDialog(elements.trashDialog);
+  requestAnimationFrame(() => elements.trashConfirmButton.focus());
+}
+
+async function moveAssetRecordToTrash(assetId) {
+  const asset = assetById(assetId);
+  if (!asset || asset.synthetic) return;
+  const button = elements.trashConfirmButton;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "移除中…";
+  try {
+    await api(`/api/assets/${encodeURIComponent(asset.id)}`, {
+      method: "DELETE",
+    });
+    state.selectedIds.delete(asset.id);
+    if (state.selectedId === asset.id) state.selectedId = null;
+    state.inspectorReturnFocus = null;
+    state.inspectorReturnAssetId = null;
+    closeDialog(elements.trashDialog);
+    state.trashCandidateId = null;
+    await loadBootstrap({ preserveSelection: false });
+    notify(`「${asset.title}」已從索引移除；原圖保留在本機垃圾桶。`);
+  } catch (error) {
+    notify(`無法移除素材：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function runAssetContextAction(action) {
+  const assetId = state.contextMenuAssetId;
+  if (!assetId) return;
+  closeAssetContextMenu();
+  if (action === "view") {
+    await selectAsset(assetId);
+  } else if (action === "batch") {
+    toggleBatch(assetId);
+  } else if (action === "analyze") {
+    await analyzeAssets([assetId]);
+  } else if (action === "trash") {
+    openTrashDialog(assetId);
+  }
 }
 
 function visualDnaRows(visualDna, data) {
@@ -2268,7 +2447,10 @@ window.addEventListener("dragover", handleFileDragOver);
 window.addEventListener("dragleave", handleFileDragLeave);
 window.addEventListener("drop", handleFileDrop);
 window.addEventListener("dragend", resetDropImport);
-window.addEventListener("blur", resetDropImport);
+window.addEventListener("blur", () => {
+  resetDropImport();
+  closeAssetContextMenu();
+});
 elements.scanButton.addEventListener("click", scanFolder);
 elements.recognizeButton.addEventListener("click", () =>
   analyzeAssets(currentAnalyzeIds()),
@@ -2310,6 +2492,17 @@ elements.collectionForm.addEventListener("submit", async (event) => {
   } finally {
     submit.disabled = false;
   }
+});
+
+elements.trashForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.trashCandidateId) {
+    await moveAssetRecordToTrash(state.trashCandidateId);
+  }
+});
+
+elements.trashDialog.addEventListener("close", () => {
+  state.trashCandidateId = null;
 });
 
 elements.settingsForm.addEventListener("submit", async (event) => {
@@ -2364,6 +2557,13 @@ document.addEventListener("submit", (event) => {
 
 document.addEventListener("click", async (event) => {
   const target = event.target;
+  const contextAction = target.closest("[data-context-action]");
+  if (contextAction) {
+    await runAssetContextAction(contextAction.dataset.contextAction);
+    return;
+  }
+  if (!target.closest("#asset-context-menu")) closeAssetContextMenu();
+
   const openAssetButton = target.closest("[data-open-asset]");
   if (openAssetButton) {
     const id = openAssetButton.dataset.openAsset;
@@ -2470,6 +2670,26 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+document.addEventListener("contextmenu", (event) => {
+  const card = event.target.closest?.("[data-asset-id]");
+  if (!card) {
+    closeAssetContextMenu();
+    return;
+  }
+  event.preventDefault();
+  const returnFocus = card.querySelector("[data-open-asset]");
+  openAssetContextMenu(card.dataset.assetId, {
+    x: event.clientX,
+    y: event.clientY,
+    returnFocus,
+  });
+});
+
+elements.workspace.addEventListener("scroll", () => closeAssetContextMenu(), {
+  passive: true,
+});
+window.addEventListener("resize", () => closeAssetContextMenu());
+
 document.addEventListener(
   "error",
   (event) => {
@@ -2486,7 +2706,48 @@ document.addEventListener(
 );
 
 document.addEventListener("keydown", (event) => {
+  if (document.querySelector("dialog[open]")) return;
   if (trapMobileInspectorFocus(event)) return;
+  if (!elements.assetContextMenu.hidden) {
+    if (event.key === "Escape" || event.key === "Tab") {
+      event.preventDefault();
+      closeAssetContextMenu({ restoreFocus: true });
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveContextMenuFocus(1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveContextMenuFocus(-1);
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      const items = [
+        ...elements.assetContextMenu.querySelectorAll(
+          'button[role="menuitem"]:not([disabled])',
+        ),
+      ];
+      items[event.key === "Home" ? 0 : items.length - 1]?.focus();
+      return;
+    }
+  }
+  if (
+    (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) &&
+    !isTypingTarget(event.target)
+  ) {
+    const card = event.target.closest?.("[data-asset-id]");
+    if (card) {
+      event.preventDefault();
+      openAssetContextMenu(card.dataset.assetId, {
+        returnFocus: event.target,
+      });
+      return;
+    }
+  }
   if (event.key === "/" && !isTypingTarget(event.target)) {
     event.preventDefault();
     elements.searchInput.focus();
@@ -2496,9 +2757,7 @@ document.addEventListener("keydown", (event) => {
     closeInspector();
     return;
   }
-  if (isTypingTarget(event.target) || document.querySelector("dialog[open]")) {
-    return;
-  }
+  if (isTypingTarget(event.target)) return;
   if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
     event.preventDefault();
     moveSelection(-1);

@@ -5,6 +5,7 @@
 | 資料 | 預設位置 | 是否進入 Git |
 |---|---|---|
 | 原始圖片 | `library/inbox/` | 否 |
+| 已移除原圖 | `library/trash/` | 否 |
 | SQLite 與分析結果 | `data/` | 否 |
 | 本機設定 | `.env` | 否 |
 | 程式碼與文件 | Repository | 是 |
@@ -55,6 +56,7 @@ git ls-files
 
 - [ ] `data/` 沒有被追蹤。
 - [ ] `library/inbox` 只有 `.gitkeep`。
+- [ ] `library/trash` 只有 `.gitkeep`。
 - [ ] 沒有 `.env`、Token、SQLite、Log 或私人路徑。
 - [ ] README 與成果截圖沒有機密內容。
 - [ ] 示範圖片有明確的公開權利。
