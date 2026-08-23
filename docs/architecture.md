@@ -4,7 +4,7 @@
 
 | 模組 | 責任 | 主要檔案 |
 |---|---|---|
-| Web UI | 匯入、瀏覽、搜尋、Inspector、Agent Prompt 匯出、佇列狀態 | `public/` |
+| Web UI | 匯入、瀏覽、搜尋、Inspector、Styleboard／完整分析匯出、佇列狀態 | `public/` |
 | HTTP Server | 靜態檔案、安全標頭、API、localhost bind | `server.mjs` |
 | Library | 掃描、格式檢查、SHA-256、檔案匯入與可復原移除 | `src/library.mjs` |
 | Database | SQLite Schema、查詢、FTS5、狀態 | `src/db.mjs` |
@@ -26,7 +26,7 @@ flowchart LR
     H --> D
     E -->|右鍵移除並確認| I["library/trash"]
     E -->|清理關聯| D
-    D -->|一鍵整理最新分析| J["Agent Prompt／本機剪貼簿"]
+    D -->|一鍵蒸餾或完整整理| J["Styleboard Brief／完整分析／本機剪貼簿"]
 ```
 
 ## 狀態與邊界
@@ -59,12 +59,14 @@ flowchart LR
 4. 若資料庫清理失敗，系統會嘗試把原圖移回原本位置。
 5. 分析執行中的素材暫不允許移除，避免與 Agent 讀檔競態。
 
-### Agent Prompt 匯出路徑
+### Agent 匯出路徑
 
 1. 只使用目前素材的最新 Codex 分析版本，不在匯出時重新呼叫模型。
-2. 前端整理本次任務 placeholder、原圖本機路徑、Visual DNA、色票、實作建議與避免事項。
-3. Prompt 明確要求 Agent 先檢查目標專案、把素材當成設計證據而非逐像素照抄。
-4. 結果只寫入本機剪貼簿；Stylebase 不會自動貼上、傳送或啟動另一個 Agent。
+2. `Styleboard Brief` 是預設交接格式：保留任務 placeholder、原圖路徑、最多六項任務相關 Visual DNA、精簡色票、採用理由與避免事項。
+3. `完整分析` 保留全部 Visual DNA、Prompt Kit、分析來源、版本、成功條件與回覆格式，供稽核與文字備援。
+4. 蒸餾採固定本機規則，不另做一次 AI 摘要；避免新增延遲、費用與分析漂移。
+5. 兩種 Prompt 都要求 Agent 先檢查目標專案、把素材當成設計證據而非逐像素照抄。
+6. 結果只寫入本機剪貼簿；Stylebase 不會自動貼上、傳送或啟動另一個 Agent。
 
 ### 標籤索引路徑
 
@@ -74,7 +76,7 @@ flowchart LR
 4. FTS5 將兩種標籤合併索引，因此 `/` 自由文字搜尋可找回任一來源的標籤。
 5. 點擊標籤會以重複的 `tag` query parameter 呼叫素材 API；每個值採不分大小寫的完整標籤比對，不會把 `mobile` 誤配為 `mobile-first`。
 6. 多個標籤使用 AND／交集語意；自由文字、收藏與狀態條件也會與標籤條件共同套用。
-7. Agent Prompt 匯出時會保留兩種標籤的來源差異。
+7. 完整分析匯出時會保留兩種標籤的來源差異；Styleboard Brief 則合併為最多六個索引語意，避免把搜尋 metadata 當成實作規格。
 
 ### 失敗路徑
 
@@ -153,4 +155,6 @@ UI
 - 單工佇列避免同時重試造成浪費。
 - 嚴格 Schema 減少格式修復回合。
 - 搜尋與篩選在 SQLite 完成，不把整個資料庫內容送給模型。
+- 日常 Agent 交接使用 Styleboard Brief，不重複附上完整描述、模型 metadata 與三套 Prompt Kit。
+- 能讀圖時以「原圖 + 閱讀焦點」取代把每個像素特徵全部改寫成文字；完整分析只在需要追溯時提供。
 - 未來加入批次時，先做優先級、每日上限與人工預覽，不直接放大並行數。

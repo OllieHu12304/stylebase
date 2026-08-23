@@ -11,7 +11,7 @@ Stylebase 是一套 local-first 視覺參考資料庫。圖片與 SQLite 資料�
 - 依設計領域、風格、色票、收藏與分析狀態篩選。
 - 透過 Codex 產生 Visual DNA、構圖／字體／色彩描述、實作建議與 Prompt Kit。
 - 在 Inspector 檢視 Codex 偵測標籤，並加入不會被重新分析覆蓋的自訂標籤；點擊任一標籤即可精準索引，亦可疊加多個標籤找交集。
-- 一鍵把最新 Codex 分析、原圖路徑與設計約束整理成可貼給 Agent 的 Markdown Prompt。
+- 一鍵把原圖路徑與關鍵設計證據蒸餾成精簡的 Styleboard Brief；需要追溯時仍可匯出完整分析。
 - 保留來源網址、作者、授權備註與人工修正空間。
 - 在素材上按右鍵即可檢視、加入批次、送交分析或移到可復原的本機垃圾桶。
 - 服務只綁定 `127.0.0.1`，不對區域網路或網際網路公開。
@@ -84,9 +84,35 @@ codex login status
 4. 工作會出現在「Codex 分析佇列」；同一時間只執行一個工作。
 5. 完成後檢查 Visual DNA 與 Codex 偵測標籤，視需要加入自己的索引標籤。
 6. 點擊 Codex 或自訂標籤可直接索引同標籤素材；繼續點擊其他標籤會找出同時符合全部標籤的交集，上方索引欄可逐一移除或清除。也可按 `/` 輸入自由文字，與標籤條件一起搜尋。
-7. 按「複製 Agent Prompt」，貼入 UIUX 專案的 Agent 對話並補上本次任務。
+7. 按「複製 Styleboard Brief」，連同原圖交給 UIUX 專案的 Agent，並補上本次任務。
 8. 補上來源、作者與授權備註，避免把靈感誤認成可直接複製的資產。
 9. 不需要的素材可按右鍵選擇「移到垃圾桶」；原圖會保留在 `library/trash`。
+
+## Agent 匯出如何選
+
+Stylebase 不把圖片「翻譯成一篇越長越好的文字」。原圖仍是視覺事實，匯出內容負責告訴 Agent 應注意哪些證據、如何轉譯，以及哪些部分不應照抄。
+
+| 匯出內容 | 適合情境 | 建議交給 Agent 的方式 |
+|---|---|---|
+| **Styleboard Brief（推薦）** | 建立 design board、design map、視覺方向、頁面概念或跨素材比較 | 貼上 Brief，再附原始圖片；若 Agent 與 Stylebase 位於同一個本機工作區，確認 Brief 中的絕對路徑可讀即可。補完「本次任務」的產品、使用者、平台與交付範圍。 |
+| **完整分析** | 審查 Codex 判讀、追溯分析版本、比較分析差異，或 Agent 暫時無法直接看圖時提供較完整的文字備援 | 只在需要完整 Visual DNA、Prompt Kit、模型來源與成功條件時貼上。若 Agent 能看原圖，通常不需與 Styleboard Brief 同時提供，以免重複消耗 token。 |
+| **UI 實作 Prompt** | 已確定方向，要 Agent 實作單一頁面或元件 | 從 Inspector 的 Prompt Kit 只複製「UI 實作」，再補上目標 repository、既有元件與驗收條件。 |
+| **Design tokens Prompt** | 建立或調整色彩、字級、間距與材質 token | 只複製 token 提示，並附上既有 token 檔位置；不要同時要求完整頁面重做。 |
+| **視覺生成 Prompt** | 生成 mood image、背景、材質或探索性視覺 | 交給支援影像生成的 Agent／工具，並附原圖作構圖或材質參考；不要把它當成 UI 規格。 |
+
+推薦的最小交接格式：
+
+```text
+[貼上 Styleboard Brief]
+
+本次任務：為＿＿產品的＿＿使用者，在＿＿平台產出＿＿。
+交付範圍：＿＿。
+必須沿用：＿＿。
+不要更動：＿＿。
+原始圖片：附檔，或確認 Brief 內的本機路徑可讀。
+```
+
+若要同時使用多張參考圖，先在 Stylebase 以標籤找出少量候選，再為每張圖各匯出一份 Styleboard Brief，並在任務開頭指定角色，例如「A 只參考資訊層級、B 只參考色彩、C 只參考材質」。不要把整個素材庫或所有完整分析一次貼給 Agent。
 
 ## 資料與隱私邊界
 
@@ -103,7 +129,7 @@ stylebase-design-inspiration-library/
 
 - 匯入、掃描、搜尋不會呼叫 AI。
 - 只有按「送交 Codex」才會把該張圖片傳至 Codex 服務。
-- 「複製 Agent Prompt」只寫入本機剪貼簿；貼到其他服務前請先檢查本機路徑、來源與筆記。
+- 「複製 Styleboard Brief」與「複製完整分析」都只寫入本機剪貼簿；貼到其他服務前請先檢查本機路徑、來源與筆記。
 - Stylebase 不保存 API Key；它沿用本機 Codex CLI 的登入狀態。
 - Agent 工作採一次性 session、唯讀 sandbox 與嚴格 JSON Schema。
 - `data/`、`.env`、SQLite 檔與 `library/inbox`、`library/trash` 圖片都不會提交到 Git。

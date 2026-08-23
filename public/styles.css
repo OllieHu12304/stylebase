@@ -1630,6 +1630,16 @@ svg {
   height: 16px;
 }
 
+.agent-export-button--preferred {
+  border-color: var(--blue-deep);
+  color: var(--blue-deep);
+  background: var(--blue-soft);
+}
+
+.agent-export-button--preferred:hover {
+  background: #d7e2ff;
+}
+
 .codex-disclosure {
   color: var(--muted);
   font-size: 9px;

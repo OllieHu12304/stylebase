@@ -15,6 +15,17 @@ const VISUAL_DNA_LABELS = Object.freeze({
   interaction: "互動線索",
 });
 
+const STYLEBOARD_DNA_KEYS = Object.freeze([
+  "composition",
+  "grid",
+  "hierarchy",
+  "typography",
+  "color",
+  "imagery",
+  "material",
+  "interaction",
+]);
+
 function cleanText(value) {
   return String(value ?? "")
     .replace(/\r\n?/g, "\n")
@@ -41,6 +52,33 @@ function readableValue(value) {
 function textList(value) {
   const items = Array.isArray(value) ? value : value ? [value] : [];
   return items.map(readableValue).filter(Boolean);
+}
+
+function compactText(value, maxLength = 220) {
+  const text = readableValue(value).replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+function uniqueTextItems(values) {
+  const seen = new Set();
+  return values
+    .map((value) => compactText(value))
+    .filter((value) => {
+      if (!value) return false;
+      const key = value.normalize("NFKC").toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function compactList(value, limit = 5, maxLength = 180) {
+  return uniqueTextItems(
+    textList(value).flatMap((item) => item.split(/[\n,，;；]+/)),
+  )
+    .map((item) => compactText(item, maxLength))
+    .slice(0, limit);
 }
 
 function appendBullets(lines, heading, items) {
@@ -74,6 +112,96 @@ export function hasExportableAnalysis(analysis) {
       (analysis.recipe || []).length ||
       Object.values(analysis.prompts || {}).some((value) => cleanText(value)),
   );
+}
+
+export function buildStyleboardBrief({ asset, analysis, inboxPath = "" }) {
+  if (!asset || typeof asset !== "object") {
+    throw new TypeError("asset is required");
+  }
+  if (!hasExportableAnalysis(analysis)) {
+    throw new Error("這張素材尚未有可匯出的 Codex 分析結果。");
+  }
+
+  const data = analysis.data && typeof analysis.data === "object" ? analysis.data : {};
+  const title = cleanText(asset.title) || cleanText(asset.fileName) || "未命名素材";
+  const absolutePath = joinLocalAssetPath(inboxPath, asset.relativePath);
+  const tags = uniqueTextItems([
+    ...textList(analysis.tags || data.tags),
+    ...textList(asset.customTags),
+  ]).slice(0, 6);
+  const dnaEntries = STYLEBOARD_DNA_KEYS.map((key) => [
+    VISUAL_DNA_LABELS[key] || key,
+    compactText(analysis.visualDna?.[key]),
+  ])
+    .filter(([, value]) => value)
+    .slice(0, 6);
+  const palette = (analysis.palette || [])
+    .map((swatch) => {
+      const hex = cleanText(swatch?.hex);
+      const name = compactText(swatch?.name, 48);
+      return hex ? `${hex}${name ? ` ${name}` : ""}` : "";
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+  const rationale = compactList(analysis.whyItWorks, 3, 180);
+  const avoid = uniqueTextItems([
+    ...compactList(data.avoid, 5, 150),
+    ...compactList(analysis.prompts?.negative, 5, 150),
+  ]).slice(0, 5);
+  const fallbackSummary = compactText(data.summary || analysis.description, 280);
+  const focusLabels = dnaEntries.map(([label]) => label);
+
+  const lines = [
+    "# Stylebase Styleboard Brief",
+    "",
+    "## 本次任務",
+    "[描述產品／頁面、目標使用者、平台、交付範圍與必要限制]",
+    "",
+    "## 原始參考",
+    `- 素材：${title}`,
+  ];
+
+  if (absolutePath) lines.push(`- 原圖：${absolutePath}`);
+  if (cleanText(asset.sourceUrl)) lines.push(`- 來源：${cleanText(asset.sourceUrl)}`);
+  if (cleanText(asset.rightsNote)) lines.push(`- 權利備註：${compactText(asset.rightsNote, 180)}`);
+  if (analysis.version) lines.push(`- Stylebase 分析版本：${cleanText(analysis.version)}`);
+  lines.push(
+    "- 閱讀原則：原圖是視覺事實；本 brief 只標示採用焦點，不取代看圖與專案脈絡。",
+    "",
+    "## 參考角色",
+    `- 將這張素材用作${
+      focusLabels.length ? focusLabels.join("、") : "整體視覺方向"
+    }的證據；轉譯設計原則，不複製品牌、人物、圖像或文案。`,
+  );
+  if (tags.length) lines.push(`- 索引語意：${tags.join("、")}`);
+  if (!absolutePath && fallbackSummary) {
+    lines.push(`- 無法直接讀取原圖時的摘要：${fallbackSummary}`);
+  }
+  lines.push("", "## 採用證據");
+
+  if (dnaEntries.length) {
+    lines.push(...dnaEntries.map(([label, value]) => `- ${label}：${value}`));
+  } else if (fallbackSummary) {
+    lines.push(`- 視覺摘要：${fallbackSummary}`);
+  }
+  if (palette.length) lines.push(`- 色彩角色：${palette.join(" / ")}`);
+
+  if (rationale.length) {
+    lines.push("", "## 為何採用", ...rationale.map((item) => `- ${item}`));
+  }
+
+  lines.push("", "## 轉譯邊界");
+  if (avoid.length) lines.push(...avoid.map((item) => `- 避免：${item}`));
+  lines.push(
+    "- 既有產品內容、品牌系統、可存取性與技術限制優先於參考圖；證據不足處不要自行捏造。",
+    "",
+    "## Agent 交付",
+    "1. 先檢查目標專案與原圖，提出適用於本次任務的 design board／design direction。",
+    "2. 將採用證據映射到色彩、字體、構圖、材質或元件決策，說明哪些採用、調整或捨棄。",
+    "3. 若進入實作，沿用既有系統並以桌面／手機實際畫面、響應式與可存取性驗證結果。",
+  );
+
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export function buildAgentPrompt({ asset, analysis, inboxPath = "" }) {

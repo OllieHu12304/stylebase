@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildAgentPrompt,
+  buildStyleboardBrief,
   hasExportableAnalysis,
   joinLocalAssetPath,
 } from "../public/agent-prompt.js";
@@ -76,10 +77,64 @@ test("buildAgentPrompt exports traceable visual evidence and task boundaries", (
   assert.doesNotMatch(prompt, /undefined|null/);
 });
 
+test("buildStyleboardBrief distills image-led evidence without prompt history", () => {
+  const asset = {
+    title: "Editorial reference",
+    fileName: "editorial.png",
+    relativePath: "web/editorial.png",
+    sourceUrl: "https://example.com/reference",
+    rightsNote: "研究用，不重用品牌資產。",
+    customTags: ["會員中心", "高對比"],
+  };
+  const brief = buildStyleboardBrief({
+    asset,
+    analysis: {
+      ...analysis,
+      visualDna: {
+        ...analysis.visualDna,
+        grid: "十二欄模組網格，內容跨越不同欄寬形成節奏。",
+        hierarchy: "巨幅標題、短摘要、低調 metadata 三段式層級。",
+        color: "紙白為背景、墨黑承載內容、校準藍只用於互動狀態。",
+        imagery: "大比例裁切，保留單一明確焦點。",
+        material: "平面紙張感與細線分隔。",
+        interaction: "底線與藍色標示可點擊狀態。",
+      },
+      whyItWorks: [
+        "層級能在第一眼被理解。",
+        "有限色彩讓內容與互動角色保持清楚。",
+        "不對稱構圖提供辨識度，同時保留穩定網格。",
+        "這一項超過三筆，不應進入蒸餾輸出。",
+      ],
+    },
+    inboxPath: "/Stylebase/library/inbox",
+  });
+  const fullPrompt = buildAgentPrompt({
+    asset,
+    analysis,
+    inboxPath: "/Stylebase/library/inbox",
+  });
+
+  assert.match(brief, /^# Stylebase Styleboard Brief/);
+  assert.match(brief, /原圖：\/Stylebase\/library\/inbox\/web\/editorial\.png/);
+  assert.match(brief, /原圖是視覺事實/);
+  assert.match(brief, /構圖：非對稱主視覺與模組網格/);
+  assert.match(brief, /色彩角色：#171918 Ink \/ #F7F7F3 Paper/);
+  assert.match(brief, /索引語意：editorial、minimal、會員中心、高對比/);
+  assert.match(brief, /## Agent 交付/);
+  assert.doesNotMatch(brief, /fixture-model|分析時間|Prompt 版本|可直接採用的設計提示/);
+  assert.doesNotMatch(brief, /這一項超過三筆/);
+  assert.ok(brief.length < fullPrompt.length);
+  assert.doesNotMatch(brief, /undefined|null/);
+});
+
 test("hasExportableAnalysis rejects assets without Codex evidence", () => {
   assert.equal(hasExportableAnalysis({ data: {}, prompts: {} }), false);
   assert.throws(
     () => buildAgentPrompt({ asset: { title: "Empty" }, analysis: {} }),
+    /尚未有可匯出/,
+  );
+  assert.throws(
+    () => buildStyleboardBrief({ asset: { title: "Empty" }, analysis: {} }),
     /尚未有可匯出/,
   );
 });
