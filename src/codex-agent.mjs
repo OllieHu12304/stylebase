@@ -1,6 +1,14 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -12,6 +20,12 @@ import {
 
 const AGENT_TIMEOUT_MS = 12 * 60 * 1000;
 const OUTPUT_LIMIT = 2 * 1024 * 1024;
+const IMAGE_EXTENSIONS = Object.freeze({
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+});
 
 function requiredEnvironment(source = process.env) {
   const allowed = [
@@ -210,6 +224,26 @@ async function removeJobDirectory(dataDirectory, jobDirectory) {
   await rm(target, { recursive: true, force: true });
 }
 
+function assertUsableVisualAnalysis(analysis) {
+  if (analysis.confidence > 0.01) return;
+  const diagnosticText = [
+    analysis.summary,
+    analysis.detailedDescription,
+    ...Object.values(analysis.visualDNA || {}),
+  ]
+    .join(" ")
+    .toLocaleLowerCase();
+  const unavailableImagePattern =
+    /(?:無法|未能|沒有可供|未取得|讀取失敗).{0,60}(?:圖片|影像|像素)|(?:圖片|影像|像素).{0,60}(?:無法|未能|不存在|讀取失敗)|(?:cannot|unable|could not|failed to).{0,60}(?:image|pixel)|(?:image|pixel).{0,60}(?:unavailable|missing|not found)/i;
+  if (!unavailableImagePattern.test(diagnosticText)) return;
+
+  const error = new Error(
+    "Codex 未能讀取圖片像素，因此未保存這次無效分析；請重新送交。",
+  );
+  error.code = "CODEX_IMAGE_UNREADABLE";
+  throw error;
+}
+
 export async function checkCodexAgent(configuration = {}) {
   const launcher = await resolveLauncher(configuration);
   try {
@@ -282,6 +316,10 @@ export async function runCodexAnalysis({
   const jobDirectory = await mkdtemp(
     path.join(dataDirectory, "codex-agent-job-"),
   );
+  const stagedImagePath = path.join(
+    jobDirectory,
+    `analysis-input${IMAGE_EXTENSIONS[mimeType]}`,
+  );
   const schemaPath = path.join(jobDirectory, "analysis.schema.json");
   const outputPath = path.join(jobDirectory, "analysis.output.json");
   const launcher = await resolveLauncher(configuration);
@@ -291,6 +329,7 @@ export async function runCodexAnalysis({
     `${JSON.stringify(ANALYSIS_SCHEMA, null, 2)}\n`,
     "utf8",
   );
+  await copyFile(imagePath, stagedImagePath);
 
   const args = [
     ...launcher.prefix,
@@ -306,7 +345,7 @@ export async function runCodexAnalysis({
     "--color",
     "never",
     "--image",
-    imagePath,
+    stagedImagePath,
     "--output-schema",
     schemaPath,
     "--output-last-message",
@@ -345,6 +384,7 @@ export async function runCodexAnalysis({
     }
 
     const analysis = validateAnalysis(parsed);
+    assertUsableVisualAnalysis(analysis);
     return {
       analysis,
       model: configuration.model || "signed-in-default",

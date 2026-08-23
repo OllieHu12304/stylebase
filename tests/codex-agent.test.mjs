@@ -11,6 +11,7 @@ import {
 
 const FAKE_CODEX_LAUNCHER = String.raw`
 const fs = require("node:fs");
+const path = require("node:path");
 
 const args = process.argv.slice(2);
 
@@ -47,7 +48,13 @@ function valueAfter(flag) {
 
 const schemaPath = valueAfter("--output-schema");
 const outputPath = valueAfter("--output-last-message");
+const imagePath = valueAfter("--image");
 fs.accessSync(schemaPath, fs.constants.R_OK);
+fs.accessSync(imagePath, fs.constants.R_OK);
+if (imagePath.includes(",") || path.basename(imagePath) !== "analysis-input.png") {
+  process.stderr.write("Expected a staged image path without CLI delimiters.\n");
+  process.exit(2);
+}
 
 const analysis = {
   schemaVersion: "stylebase-visual-v1",
@@ -129,6 +136,7 @@ process.stdout.write(
 
 let temporaryRoot;
 let fakeLauncherPath;
+let unreadableLauncherPath;
 let imagePath;
 
 async function removeOwnedTemporaryDirectory(target) {
@@ -154,9 +162,18 @@ before(async () => {
     path.join(os.tmpdir(), "stylebase-codex-agent-test-"),
   );
   fakeLauncherPath = path.join(temporaryRoot, "fake-codex.js");
-  imagePath = path.join(temporaryRoot, "reference.png");
+  unreadableLauncherPath = path.join(temporaryRoot, "unreadable-codex.js");
+  imagePath = path.join(temporaryRoot, "reference, visual study.png");
 
   await writeFile(fakeLauncherPath, FAKE_CODEX_LAUNCHER, "utf8");
+  await writeFile(
+    unreadableLauncherPath,
+    FAKE_CODEX_LAUNCHER.replace(
+      "High-contrast editorial interface with a calm modular rhythm.",
+      "未能取得附加圖片的像素內容，因此無法建立可靠的視覺設計證據。",
+    ).replace("confidence: 0.91", "confidence: 0"),
+    "utf8",
+  );
   await writeFile(
     imagePath,
     Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -236,6 +253,25 @@ test("runCodexAnalysis rejects a non-image input before launching Codex", async 
     }),
     (error) => {
       assert.equal(error?.code, "CODEX_CONFIGURATION");
+      return true;
+    },
+  );
+});
+
+test("runCodexAnalysis rejects zero-confidence image-read failures", async () => {
+  await assert.rejects(
+    runCodexAnalysis({
+      imagePath,
+      mimeType: "image/png",
+      configuration: {
+        executable: unreadableLauncherPath,
+        dataDirectory: path.join(temporaryRoot, "unreadable-agent-data"),
+        timeoutMs: 5_000,
+      },
+    }),
+    (error) => {
+      assert.equal(error?.code, "CODEX_IMAGE_UNREADABLE");
+      assert.match(error?.message, /未能讀取圖片像素/);
       return true;
     },
   );
