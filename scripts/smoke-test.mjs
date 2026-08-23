@@ -138,6 +138,66 @@ try {
     throw new Error("Custom tag persistence or search indexing failed.");
   }
 
+  const createCollectionResponse = await fetch(`${baseUrl}/api/collections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Smoke collection" }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const collection = await createCollectionResponse.json();
+  const addCollectionItemsResponse = await fetch(
+    `${baseUrl}/api/collections/${encodeURIComponent(collection.id)}/items`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assetIds: [imported.asset.id] }),
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  const populatedCollection = await addCollectionItemsResponse.json();
+  const renameCollectionResponse = await fetch(
+    `${baseUrl}/api/collections/${encodeURIComponent(collection.id)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Renamed smoke collection" }),
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  const renamedCollection = await renameCollectionResponse.json();
+  const reorderCollectionsResponse = await fetch(
+    `${baseUrl}/api/collections/order`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collectionIds: [collection.id] }),
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  const reorderedCollections = await reorderCollectionsResponse.json();
+  if (
+    !createCollectionResponse.ok ||
+    !addCollectionItemsResponse.ok ||
+    populatedCollection.itemCount !== 1 ||
+    populatedCollection.coverAssetId !== String(imported.asset.id) ||
+    !renameCollectionResponse.ok ||
+    renamedCollection.name !== "Renamed smoke collection" ||
+    !reorderCollectionsResponse.ok ||
+    reorderedCollections[0]?.id !== collection.id
+  ) {
+    throw new Error("Collection management API smoke test failed.");
+  }
+  const deleteCollectionResponse = await fetch(
+    `${baseUrl}/api/collections/${encodeURIComponent(collection.id)}`,
+    {
+      method: "DELETE",
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  if (!deleteCollectionResponse.ok) {
+    throw new Error("Collection deletion smoke test failed.");
+  }
+
   const deleteResponse = await fetch(
     `${baseUrl}/api/assets/${encodeURIComponent(imported.asset.id)}`,
     {
@@ -159,7 +219,7 @@ try {
   }
 
   console.log(
-    `Smoke test passed: HTTP 200, v${bootstrap.version}, CSP present, custom tags searchable, asset removal recoverable.`,
+    `Smoke test passed: HTTP 200, v${bootstrap.version}, CSP present, custom tags searchable, collections manageable, asset removal recoverable.`,
   );
 } catch (error) {
   if (output.trim()) console.error(output.trim());

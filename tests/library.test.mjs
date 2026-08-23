@@ -160,6 +160,64 @@ test("deleteAsset removes dependent jobs and collection links", async (t) => {
   assert.equal(catalog.getCollection(collection.id).itemCount, 0);
 });
 
+test(
+  "collections support batch add, dynamic covers, rename, reorder, and delete",
+  async (t) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "stylebase-collections-"));
+    const catalog = createCatalog(path.join(root, "catalog.sqlite"));
+    t.after(async () => {
+      catalog.close();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    const firstAsset = catalog.upsertAsset({
+      sha256: "1".repeat(64),
+      relativePath: "first.png",
+      fileName: "first.png",
+      mimeType: "image/png",
+    }).asset;
+    const secondAsset = catalog.upsertAsset({
+      sha256: "2".repeat(64),
+      relativePath: "second.png",
+      fileName: "second.png",
+      mimeType: "image/png",
+    }).asset;
+    const firstCollection = catalog.createCollection("First");
+    const secondCollection = catalog.createCollection("Second");
+
+    const populated = catalog.addCollectionItems(firstCollection.id, [
+      firstAsset.id,
+      secondAsset.id,
+      firstAsset.id,
+    ]);
+    assert.equal(populated.itemCount, 2);
+    assert.equal(populated.coverAssetId, String(secondAsset.id));
+
+    const renamed = catalog.updateCollection(firstCollection.id, {
+      name: "Renamed",
+    });
+    assert.equal(renamed.name, "Renamed");
+
+    const reordered = catalog.reorderCollections([
+      secondCollection.id,
+      firstCollection.id,
+    ]);
+    assert.deepEqual(
+      reordered.map((collection) => collection.id),
+      [secondCollection.id, firstCollection.id],
+    );
+
+    assert.equal(
+      catalog.deleteCollection(secondCollection.id).id,
+      secondCollection.id,
+    );
+    assert.deepEqual(
+      catalog.listCollections().map((collection) => collection.id),
+      [firstCollection.id],
+    );
+  },
+);
+
 test("custom tags persist independently and participate in search", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stylebase-tags-"));
   const dataDir = path.join(root, "data");
@@ -305,12 +363,19 @@ test("createCatalog migrates a v1 asset database without losing records", async 
   catalog.close();
 
   const migrated = new DatabaseSync(dbPath, { readOnly: true });
-  assert.equal(migrated.prepare("PRAGMA user_version").get().user_version, 2);
+  assert.equal(migrated.prepare("PRAGMA user_version").get().user_version, 3);
   assert.equal(
     migrated
       .prepare("PRAGMA table_info(assets)")
       .all()
       .some((column) => column.name === "custom_tags_json"),
+    true,
+  );
+  assert.equal(
+    migrated
+      .prepare("PRAGMA table_info(collections)")
+      .all()
+      .some((column) => column.name === "sort_order"),
     true,
   );
   migrated.close();

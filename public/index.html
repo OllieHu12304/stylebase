@@ -94,6 +94,18 @@ FORM: Operate/Experience hybrid; grounded direction position 3, registration-con
         <path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13"></path>
         <path d="M10 11v5M14 11v5"></path>
       </symbol>
+      <symbol id="icon-edit" viewBox="0 0 24 24">
+        <path d="M4 20h4l11-11-4-4L4 16z"></path>
+        <path d="m13 7 4 4"></path>
+      </symbol>
+      <symbol id="icon-grip" viewBox="0 0 24 24">
+        <circle cx="8" cy="6" r="1" fill="currentColor" stroke="none"></circle>
+        <circle cx="16" cy="6" r="1" fill="currentColor" stroke="none"></circle>
+        <circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"></circle>
+        <circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"></circle>
+        <circle cx="8" cy="18" r="1" fill="currentColor" stroke="none"></circle>
+        <circle cx="16" cy="18" r="1" fill="currentColor" stroke="none"></circle>
+      </symbol>
     </svg>
 
     <div class="app-shell" id="app">
@@ -256,6 +268,9 @@ FORM: Operate/Experience hybrid; grounded direction position 3, registration-con
             </select>
           </label>
           <button class="text-button" id="clear-filters-button" type="button">清除條件</button>
+          <button class="button button--quiet select-all-button" id="select-all-button" type="button" hidden>
+            全選本頁
+          </button>
         </section>
 
         <section class="batch-bar" id="batch-bar" hidden aria-label="批次操作">
@@ -264,7 +279,16 @@ FORM: Operate/Experience hybrid; grounded direction position 3, registration-con
           <small class="codex-disclosure codex-disclosure--batch">
             送交時才會將選取影像傳送至 Codex 服務；匯入本身不會上傳。
           </small>
-          <div>
+          <div class="batch-actions">
+            <label class="batch-collection-control">
+              <span class="sr-only">選擇收藏集</span>
+              <select id="batch-collection-select" aria-label="選擇要加入的收藏集">
+                <option value="">加入收藏集…</option>
+              </select>
+            </label>
+            <button class="button button--quiet" id="batch-add-collection-button" type="button" disabled>
+              加入收藏集
+            </button>
             <button class="text-button" id="clear-selection-button" type="button">取消選取</button>
             <button
               class="button button--primary"
@@ -321,6 +345,18 @@ FORM: Operate/Experience hybrid; grounded direction position 3, registration-con
           <div class="collection-table" id="collection-table"></div>
         </section>
       </main>
+
+      <div
+        class="inspector-resizer"
+        id="inspector-resizer"
+        role="separator"
+        tabindex="0"
+        aria-label="調整詳細檢視寬度"
+        aria-orientation="vertical"
+        aria-valuemin="300"
+        aria-valuemax="720"
+        aria-valuenow="372"
+      ></div>
 
       <aside class="inspector" id="inspector" aria-label="影像詳細檢視">
         <div class="inspector-empty" id="inspector-empty">
@@ -398,6 +434,7 @@ FORM: Operate/Experience hybrid; grounded direction position 3, registration-con
 
     <dialog class="sheet-dialog" id="collection-dialog" aria-labelledby="collection-dialog-title">
       <form id="collection-form">
+        <input id="collection-id" name="collectionId" type="hidden" />
         <div class="dialog-heading">
           <div>
             <p class="view-kicker">策展</p>
@@ -413,7 +450,32 @@ FORM: Operate/Experience hybrid; grounded direction position 3, registration-con
         </label>
         <div class="dialog-actions">
           <button class="button button--quiet" type="button" data-close-dialog>取消</button>
-          <button class="button button--primary" type="submit">建立收藏集</button>
+          <button class="button button--primary" id="collection-submit-button" type="submit">建立收藏集</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="sheet-dialog" id="collection-delete-dialog" aria-labelledby="collection-delete-dialog-title">
+      <form id="collection-delete-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="view-kicker">刪除收藏集</p>
+            <h2 id="collection-delete-dialog-title">刪除這個收藏集？</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-dialog aria-label="關閉">
+            <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+          </button>
+        </div>
+        <p class="trash-dialog-copy">
+          「<strong id="collection-delete-name">這個收藏集</strong>」會從收藏索引移除。
+        </p>
+        <div class="trash-disclosure">
+          <strong>只會刪除收藏集</strong>
+          <span>收藏集內的原始素材、Codex 分析與標籤都會保留在素材庫。</span>
+        </div>
+        <div class="dialog-actions">
+          <button class="button button--quiet" type="button" data-close-dialog>保留收藏集</button>
+          <button class="button button--danger" id="collection-delete-confirm-button" type="submit">刪除收藏集</button>
         </div>
       </form>
     </dialog>

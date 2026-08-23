@@ -366,6 +366,12 @@ async function handleApi(request, response, url) {
     return true;
   }
 
+  if (method === "PATCH" && pathname === "/api/collections/order") {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, catalog.reorderCollections(body.collectionIds));
+    return true;
+  }
+
   const assetMatch = pathname.match(/^\/api\/assets\/([^/]+)$/);
   if (assetMatch) {
     const id = decodeURIComponent(assetMatch[1]);
@@ -457,14 +463,28 @@ async function handleApi(request, response, url) {
   }
 
   const collectionMatch = pathname.match(/^\/api\/collections\/([^/]+)$/);
-  if (method === "GET" && collectionMatch) {
-    const collection = catalog.getCollection(
-      decodeURIComponent(collectionMatch[1]),
-    );
-    if (!collection) throw new ApiError(404, "找不到這個收藏集。");
-    collection.items = collection.items.map(safeAsset);
-    sendJson(response, 200, collection);
-    return true;
+  if (collectionMatch) {
+    const id = decodeURIComponent(collectionMatch[1]);
+    if (method === "GET") {
+      const collection = catalog.getCollection(id);
+      if (!collection) throw new ApiError(404, "找不到這個收藏集。");
+      collection.items = collection.items.map(safeAsset);
+      sendJson(response, 200, collection);
+      return true;
+    }
+    if (method === "PATCH") {
+      const body = await readJsonBody(request);
+      const name = String(body.name || "").trim();
+      if (name.length < 1 || name.length > 80) {
+        throw new ApiError(400, "收藏集名稱需為 1–80 個字元。");
+      }
+      sendJson(response, 200, catalog.updateCollection(id, { name }));
+      return true;
+    }
+    if (method === "DELETE") {
+      sendJson(response, 200, catalog.deleteCollection(id));
+      return true;
+    }
   }
 
   const collectionItemsMatch = pathname.match(
@@ -472,10 +492,15 @@ async function handleApi(request, response, url) {
   );
   if (method === "POST" && collectionItemsMatch) {
     const body = await readJsonBody(request);
-    const item = catalog.addCollectionItem(
-      decodeURIComponent(collectionItemsMatch[1]),
-      String(body.assetId || ""),
-    );
+    const item = Array.isArray(body.assetIds)
+      ? catalog.addCollectionItems(
+          decodeURIComponent(collectionItemsMatch[1]),
+          body.assetIds,
+        )
+      : catalog.addCollectionItem(
+          decodeURIComponent(collectionItemsMatch[1]),
+          String(body.assetId || ""),
+        );
     sendJson(response, 201, item);
     return true;
   }

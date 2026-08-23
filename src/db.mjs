@@ -427,6 +427,11 @@ function collectionFromRow(row) {
     id: row.id,
     name: row.name,
     itemCount: Number(row.item_count ?? 0),
+    sortOrder: Number(row.sort_order ?? 0),
+    coverAssetId:
+      row.cover_asset_id === null || row.cover_asset_id === undefined
+        ? null
+        : String(row.cover_asset_id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -578,7 +583,16 @@ export function createCatalog(dbPath) {
         CHECK (json_valid(custom_tags_json));
     `);
   }
-  db.exec("PRAGMA user_version = 2;");
+  const collectionColumns = new Set(
+    db.prepare("PRAGMA table_info(collections)").all().map((row) => row.name),
+  );
+  if (!collectionColumns.has("sort_order")) {
+    db.exec(
+      "ALTER TABLE collections ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;",
+    );
+    db.exec("UPDATE collections SET sort_order = id;");
+  }
+  db.exec("PRAGMA user_version = 3;");
 
   db.prepare(`
     INSERT OR IGNORE INTO settings(id, data_json, updated_at)
@@ -1647,13 +1661,21 @@ export function createCatalog(dbPath) {
         SELECT
           c.id,
           c.name,
+          c.sort_order,
           c.created_at,
           c.updated_at,
-          COUNT(ci.asset_id) AS item_count
+          COUNT(ci.asset_id) AS item_count,
+          (
+            SELECT latest.asset_id
+            FROM collection_items latest
+            WHERE latest.collection_id = c.id
+            ORDER BY latest.added_at DESC, latest.asset_id DESC
+            LIMIT 1
+          ) AS cover_asset_id
         FROM collections c
         LEFT JOIN collection_items ci ON ci.collection_id = c.id
         GROUP BY c.id
-        ORDER BY c.name COLLATE NOCASE ASC
+        ORDER BY c.sort_order ASC, c.id ASC
       `)
       .all()
       .map(collectionFromRow);
@@ -1664,13 +1686,14 @@ export function createCatalog(dbPath) {
     const now = currentTimestamp();
     try {
       const result = db.prepare(`
-        INSERT INTO collections(name, created_at, updated_at)
-        VALUES(?, ?, ?)
+        INSERT INTO collections(name, sort_order, created_at, updated_at)
+        VALUES(?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM collections), ?, ?)
       `).run(normalizedName, now, now);
       return collectionFromRow(
         db
           .prepare(`
-            SELECT id, name, created_at, updated_at, 0 AS item_count
+            SELECT id, name, sort_order, created_at, updated_at,
+              0 AS item_count, NULL AS cover_asset_id
             FROM collections
             WHERE id = ?
           `)
@@ -1709,6 +1732,8 @@ export function createCatalog(dbPath) {
       id: collection.id,
       name: collection.name,
       itemCount: rows.length,
+      sortOrder: Number(collection.sort_order ?? 0),
+      coverAssetId: rows[0] ? String(rows[0].id) : null,
       createdAt: collection.created_at,
       updatedAt: collection.updated_at,
       items: rows.map(assetFromRow),
@@ -1716,14 +1741,28 @@ export function createCatalog(dbPath) {
   }
 
   function addCollectionItem(collectionId, assetId) {
+    return addCollectionItems(collectionId, [assetId]);
+  }
+
+  function addCollectionItems(collectionId, assetIds) {
     const collection = requireCollectionRow(collectionId);
-    const asset = requireAssetRow(assetId);
+    if (!Array.isArray(assetIds)) {
+      throw new TypeError("assetIds must be an array.");
+    }
+    const assets = [...new Set(assetIds.map((id) => requireAssetRow(id).id))];
     const now = currentTimestamp();
     transaction(() => {
-      db.prepare(`
+      const insert = db.prepare(`
         INSERT OR IGNORE INTO collection_items(collection_id, asset_id, added_at)
         VALUES(?, ?, ?)
-      `).run(collection.id, asset.id, now);
+      `);
+      assets.forEach((assetId, index) =>
+        insert.run(
+          collection.id,
+          assetId,
+          new Date(Date.parse(now) + index).toISOString(),
+        ),
+      );
       db.prepare(`
         UPDATE collections
         SET updated_at = ?
@@ -1731,6 +1770,66 @@ export function createCatalog(dbPath) {
       `).run(now, collection.id);
     });
     return getCollection(collection.id);
+  }
+
+  function updateCollection(collectionId, { name } = {}) {
+    const collection = requireCollectionRow(collectionId);
+    const normalizedName = requiredString(name, "name", 120);
+    const now = currentTimestamp();
+    try {
+      db.prepare(`UPDATE collections SET name = ?, updated_at = ? WHERE id = ?`).run(
+        normalizedName,
+        now,
+        collection.id,
+      );
+    } catch (error) {
+      if (
+        /UNIQUE constraint failed: collections\.name/i.test(
+          error?.message || "",
+        )
+      ) {
+        throw new Error(`Collection already exists: ${normalizedName}.`, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+    return listCollections().find((item) => item.id === collection.id);
+  }
+
+  function deleteCollection(collectionId) {
+    const collection = requireCollectionRow(collectionId);
+    db.prepare("DELETE FROM collections WHERE id = ?").run(collection.id);
+    return collectionFromRow({ ...collection, item_count: 0 });
+  }
+
+  function reorderCollections(collectionIds) {
+    if (!Array.isArray(collectionIds)) {
+      throw new TypeError("collectionIds must be an array.");
+    }
+    const requested = [
+      ...new Set(
+        collectionIds.map((id) => positiveId(id, "collectionId")),
+      ),
+    ];
+    const existing = db
+      .prepare("SELECT id FROM collections ORDER BY sort_order, id")
+      .all()
+      .map((row) => row.id);
+    const existingSet = new Set(existing);
+    if (requested.some((id) => !existingSet.has(id))) {
+      throw new Error("Collection order contains an unknown collection.");
+    }
+    const ordered = [
+      ...requested,
+      ...existing.filter((id) => !requested.includes(id)),
+    ];
+    const update = db.prepare(
+      "UPDATE collections SET sort_order = ?, updated_at = ? WHERE id = ?",
+    );
+    const now = currentTimestamp();
+    transaction(() => ordered.forEach((id, index) => update.run(index, now, id)));
+    return listCollections();
   }
 
   function removeCollectionItem(collectionId, assetId) {
@@ -1851,8 +1950,12 @@ export function createCatalog(dbPath) {
     updateSettings,
     listCollections,
     createCollection,
+    updateCollection,
+    deleteCollection,
+    reorderCollections,
     getCollection,
     addCollectionItem,
+    addCollectionItems,
     removeCollectionItem,
     getFacets,
   });

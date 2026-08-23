@@ -47,6 +47,9 @@ const state = {
   contextMenuAssetId: null,
   contextMenuReturnFocus: null,
   trashCandidateId: null,
+  collectionDeleteId: null,
+  draggedCollectionId: null,
+  inspectorResize: null,
 };
 
 const elements = {
@@ -60,6 +63,7 @@ const elements = {
   errorMessage: document.querySelector("#error-message"),
   setupNotice: document.querySelector("#setup-notice"),
   inspector: document.querySelector("#inspector"),
+  inspectorResizer: document.querySelector("#inspector-resizer"),
   inspectorEmpty: document.querySelector("#inspector-empty"),
   inspectorContent: document.querySelector("#inspector-content"),
   resultSummary: document.querySelector("#result-summary"),
@@ -72,6 +76,7 @@ const elements = {
   statusFilter: document.querySelector("#status-filter"),
   sortSelect: document.querySelector("#sort-select"),
   clearFiltersButton: document.querySelector("#clear-filters-button"),
+  selectAllButton: document.querySelector("#select-all-button"),
   importButton: document.querySelector("#import-button"),
   fileInput: document.querySelector("#file-input"),
   dropImportOverlay: document.querySelector("#drop-import-overlay"),
@@ -88,7 +93,16 @@ const elements = {
   newCollectionButton: document.querySelector("#new-collection-button"),
   collectionDialog: document.querySelector("#collection-dialog"),
   collectionForm: document.querySelector("#collection-form"),
+  collectionId: document.querySelector("#collection-id"),
   collectionName: document.querySelector("#collection-name"),
+  collectionDialogTitle: document.querySelector("#collection-dialog-title"),
+  collectionSubmitButton: document.querySelector("#collection-submit-button"),
+  collectionDeleteDialog: document.querySelector("#collection-delete-dialog"),
+  collectionDeleteForm: document.querySelector("#collection-delete-form"),
+  collectionDeleteName: document.querySelector("#collection-delete-name"),
+  collectionDeleteConfirmButton: document.querySelector(
+    "#collection-delete-confirm-button",
+  ),
   settingsDialog: document.querySelector("#settings-dialog"),
   settingsForm: document.querySelector("#settings-form"),
   settingInboxPath: document.querySelector("#setting-inbox-path"),
@@ -106,6 +120,10 @@ const elements = {
   batchBar: document.querySelector("#batch-bar"),
   batchCount: document.querySelector("#batch-count"),
   batchAnalyzeButton: document.querySelector("#batch-analyze-button"),
+  batchCollectionSelect: document.querySelector("#batch-collection-select"),
+  batchAddCollectionButton: document.querySelector(
+    "#batch-add-collection-button",
+  ),
   clearSelectionButton: document.querySelector("#clear-selection-button"),
   queueBar: document.querySelector("#queue-bar"),
   queueToggle: document.querySelector("#queue-toggle"),
@@ -322,6 +340,12 @@ function normalizeCollection(raw) {
         collection.count,
         collection.total,
       ) ?? asArray(collection.items).length,
+    sortOrder: finiteNumber(collection.sortOrder, collection.sort_order) ?? 0,
+    coverAssetId:
+      collection.coverAssetId === null || collection.cover_asset_id === null
+        ? null
+        : String(collection.coverAssetId ?? collection.cover_asset_id ?? "") ||
+          null,
   };
 }
 
@@ -967,6 +991,40 @@ function filteredAssets() {
   return assets;
 }
 
+function visibleSelectableAssets() {
+  if (state.view === "collections") return [];
+  return filteredAssets().filter((asset) => !asset.synthetic);
+}
+
+function allVisibleAssetsSelected() {
+  const assets = visibleSelectableAssets();
+  return (
+    assets.length > 0 &&
+    assets.every((asset) => state.selectedIds.has(asset.id))
+  );
+}
+
+function toggleSelectAllVisible() {
+  const assets = visibleSelectableAssets();
+  if (!assets.length) {
+    notify("目前頁面沒有可選取的素材。", "error");
+    return;
+  }
+  const shouldClear = assets.every((asset) => state.selectedIds.has(asset.id));
+  for (const asset of assets) {
+    if (shouldClear) state.selectedIds.delete(asset.id);
+    else state.selectedIds.add(asset.id);
+  }
+  state.lastAnchorId = shouldClear ? null : assets.at(-1)?.id || null;
+  renderGallery();
+  renderBatchBar();
+  notify(
+    shouldClear
+      ? `已取消本頁 ${formatNumber(assets.length)} 張素材的選取。`
+      : `已選取本頁 ${formatNumber(assets.length)} 張素材。`,
+  );
+}
+
 function activeCollection() {
   return (
     state.collections.find(
@@ -1119,16 +1177,71 @@ function renderCollectionOverview() {
   }
 
   elements.collectionTable.innerHTML = state.collections
-    .map(
-      (collection) => `
-        <div class="collection-row">
-          <strong>${escapeHTML(collection.name)}</strong>
-          <output>${formatNumber(collection.itemCount)} 張</output>
-          <button class="button button--quiet" type="button" data-collection-id="${escapeHTML(collection.id)}">
-            開啟索引
+    .map((collection, index) => {
+      const coverUrl = collection.coverAssetId
+        ? `/media/${encodeURIComponent(collection.coverAssetId)}`
+        : "";
+      return `
+        <article class="collection-row" data-collection-row="${escapeHTML(collection.id)}">
+          <button
+            class="collection-drag-handle"
+            type="button"
+            draggable="true"
+            data-collection-drag="${escapeHTML(collection.id)}"
+            aria-label="拖曳調整「${escapeHTML(collection.name)}」的順序"
+            title="拖曳調整順序"
+          >
+            <svg class="icon" aria-hidden="true"><use href="#icon-grip"></use></svg>
           </button>
-        </div>`,
-    )
+          <span class="collection-cover" aria-hidden="true">
+            ${
+              coverUrl
+                ? `<img src="${escapeHTML(coverUrl)}" alt="" loading="lazy" />`
+                : '<span class="collection-cover-empty">EMPTY</span>'
+            }
+          </span>
+          <button class="collection-row-main" type="button" data-collection-id="${escapeHTML(collection.id)}">
+            <strong>${escapeHTML(collection.name)}</strong>
+            <small>${formatNumber(collection.itemCount)} 張素材</small>
+          </button>
+          <div class="collection-order-actions" aria-label="排序操作">
+            <button
+              class="icon-button"
+              type="button"
+              data-move-collection="${escapeHTML(collection.id)}"
+              data-direction="-1"
+              aria-label="將「${escapeHTML(collection.name)}」往前移"
+              title="往前移"
+              ${index === 0 ? "disabled" : ""}
+            >↑</button>
+            <button
+              class="icon-button"
+              type="button"
+              data-move-collection="${escapeHTML(collection.id)}"
+              data-direction="1"
+              aria-label="將「${escapeHTML(collection.name)}」往後移"
+              title="往後移"
+              ${index === state.collections.length - 1 ? "disabled" : ""}
+            >↓</button>
+          </div>
+          <div class="collection-row-actions">
+            <button
+              class="icon-button"
+              type="button"
+              data-rename-collection="${escapeHTML(collection.id)}"
+              aria-label="重新命名「${escapeHTML(collection.name)}」"
+              title="重新命名"
+            ><svg class="icon" aria-hidden="true"><use href="#icon-edit"></use></svg></button>
+            <button
+              class="icon-button collection-delete-button"
+              type="button"
+              data-delete-collection="${escapeHTML(collection.id)}"
+              aria-label="刪除「${escapeHTML(collection.name)}」"
+              title="刪除收藏集"
+            ><svg class="icon" aria-hidden="true"><use href="#icon-trash"></use></svg></button>
+          </div>
+        </article>`;
+    })
     .join("");
 }
 
@@ -1161,9 +1274,13 @@ function renderGallery() {
   const tagFilterSummary = state.tagFilters.length
     ? ` · ${formatNumber(state.tagFilters.length)} 個標籤交集`
     : "";
+  const visibleTotal =
+    state.view === "inbox" || state.discipline
+      ? renderedAssets.length
+      : state.resultTotal;
   elements.resultSummary.textContent = useSynthetic
     ? "資料庫目前為空 · 顯示 8 張合成介面研究"
-    : `${contextLabel} · ${formatNumber(state.resultTotal)} 張影像${tagFilterSummary}`;
+    : `${contextLabel} · ${formatNumber(visibleTotal)} 張影像${tagFilterSummary}`;
 
   if (!renderedAssets.length) {
     elements.gallery.innerHTML = `
@@ -1355,6 +1472,22 @@ function renderAssetContextMenu(asset) {
     }`;
 }
 
+function renderWorkspaceContextMenu() {
+  const assets = visibleSelectableAssets();
+  const allSelected = allVisibleAssetsSelected();
+  return `
+    <strong class="asset-context-menu-heading">待整理 · ${formatNumber(assets.length)} 張</strong>
+    <button
+      type="button"
+      role="menuitem"
+      data-context-action="select-all-visible"
+      ${assets.length ? "" : "disabled"}
+    >
+      <svg class="icon" aria-hidden="true"><use href="#icon-check"></use></svg>
+      <span>${allSelected ? "取消全選本頁" : "全選本頁"}</span>
+    </button>`;
+}
+
 function openAssetContextMenu(assetId, { x, y, returnFocus } = {}) {
   const asset = assetById(assetId);
   if (!asset) return;
@@ -1381,6 +1514,31 @@ function openAssetContextMenu(assetId, { x, y, returnFocus } = {}) {
   const top = Math.max(
     margin,
     Math.min(requestedY, window.innerHeight - menuRect.height - margin),
+  );
+  elements.assetContextMenu.style.left = `${Math.round(left)}px`;
+  elements.assetContextMenu.style.top = `${Math.round(top)}px`;
+  requestAnimationFrame(() => {
+    elements.assetContextMenu
+      .querySelector('button[role="menuitem"]:not([disabled])')
+      ?.focus({ preventScroll: true });
+  });
+}
+
+function openWorkspaceContextMenu({ x, y, returnFocus } = {}) {
+  closeAssetContextMenu();
+  state.contextMenuReturnFocus =
+    returnFocus instanceof HTMLElement ? returnFocus : null;
+  elements.assetContextMenu.innerHTML = renderWorkspaceContextMenu();
+  elements.assetContextMenu.hidden = false;
+  const menuRect = elements.assetContextMenu.getBoundingClientRect();
+  const margin = 8;
+  const left = Math.max(
+    margin,
+    Math.min(Number(x) || margin, window.innerWidth - menuRect.width - margin),
+  );
+  const top = Math.max(
+    margin,
+    Math.min(Number(y) || margin, window.innerHeight - menuRect.height - margin),
   );
   elements.assetContextMenu.style.left = `${Math.round(left)}px`;
   elements.assetContextMenu.style.top = `${Math.round(top)}px`;
@@ -1444,6 +1602,11 @@ async function moveAssetRecordToTrash(assetId) {
 }
 
 async function runAssetContextAction(action) {
+  if (action === "select-all-visible") {
+    closeAssetContextMenu();
+    toggleSelectAllVisible();
+    return;
+  }
   const assetId = state.contextMenuAssetId;
   if (!assetId) return;
   closeAssetContextMenu();
@@ -2059,11 +2222,55 @@ function updateAnalyzeControls() {
       : "請先選取一張真實影像";
 }
 
+function selectedAnalyzedAssets() {
+  return [...state.selectedIds]
+    .map((id) => assetById(id))
+    .filter(
+      (asset) =>
+        asset &&
+        !asset.synthetic &&
+        hasExportableAnalysis(normalizedAnalysis(asset)),
+    );
+}
+
+function renderSelectAllControl() {
+  const assets = visibleSelectableAssets();
+  const show = state.view === "inbox" && !state.activeCollectionId;
+  elements.selectAllButton.hidden = !show;
+  if (!show) return;
+  const allSelected = allVisibleAssetsSelected();
+  elements.selectAllButton.disabled = assets.length === 0;
+  elements.selectAllButton.textContent = allSelected
+    ? `取消全選 (${formatNumber(assets.length)})`
+    : `全選本頁 (${formatNumber(assets.length)})`;
+  elements.selectAllButton.setAttribute("aria-pressed", String(allSelected));
+}
+
 function renderBatchBar() {
   const count = state.selectedIds.size;
-  elements.batchBar.hidden = count === 0;
+  const analyzedCount = selectedAnalyzedAssets().length;
+  const previousCollectionId = elements.batchCollectionSelect.value;
+  elements.batchBar.hidden = count === 0 || state.view === "collections";
   elements.batchCount.textContent = `已選 ${formatNumber(count)} 張`;
   elements.batchAnalyzeButton.disabled = count === 0;
+  elements.batchCollectionSelect.innerHTML = `
+    <option value="">加入收藏集…</option>
+    ${state.collections
+      .map(
+        (collection) =>
+          `<option value="${escapeHTML(collection.id)}">${escapeHTML(collection.name)}</option>`,
+      )
+      .join("")}`;
+  if (state.collections.some((collection) => collection.id === previousCollectionId)) {
+    elements.batchCollectionSelect.value = previousCollectionId;
+  }
+  elements.batchCollectionSelect.disabled = !count || !state.collections.length;
+  elements.batchAddCollectionButton.disabled =
+    !analyzedCount || !elements.batchCollectionSelect.value;
+  elements.batchAddCollectionButton.title = analyzedCount
+    ? `將 ${analyzedCount} 張分析完成的素材加入收藏集`
+    : "選取內容中沒有分析完成的素材";
+  renderSelectAllControl();
   updateAnalyzeControls();
 }
 
@@ -2727,6 +2934,151 @@ async function createCollection(name) {
   await refreshCollections();
 }
 
+function openCollectionEditor(collection = null) {
+  elements.collectionForm.reset();
+  elements.collectionId.value = collection?.id || "";
+  elements.collectionName.value = collection?.name || "";
+  elements.collectionDialogTitle.textContent = collection
+    ? "重新命名收藏集"
+    : "新增收藏集";
+  elements.collectionSubmitButton.textContent = collection
+    ? "儲存名稱"
+    : "建立收藏集";
+  showDialog(elements.collectionDialog);
+  requestAnimationFrame(() => {
+    elements.collectionName.focus();
+    if (collection) elements.collectionName.select();
+  });
+}
+
+async function updateCollectionName(collectionId, name) {
+  await api(`/api/collections/${encodeURIComponent(collectionId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+  await refreshCollections();
+}
+
+function openCollectionDeleteDialog(collectionId) {
+  const collection = state.collections.find((item) => item.id === collectionId);
+  if (!collection) return;
+  state.collectionDeleteId = collection.id;
+  elements.collectionDeleteName.textContent = collection.name;
+  showDialog(elements.collectionDeleteDialog);
+  requestAnimationFrame(() => elements.collectionDeleteConfirmButton.focus());
+}
+
+async function deleteCollectionRecord(collectionId) {
+  const collection = state.collections.find((item) => item.id === collectionId);
+  if (!collection) return;
+  const button = elements.collectionDeleteConfirmButton;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "刪除中…";
+  try {
+    await api(`/api/collections/${encodeURIComponent(collectionId)}`, {
+      method: "DELETE",
+    });
+    if (state.activeCollectionId === collectionId) {
+      state.activeCollectionId = null;
+      state.view = "collections";
+      state.selectedId = null;
+    }
+    closeDialog(elements.collectionDeleteDialog);
+    state.collectionDeleteId = null;
+    await refreshCollections();
+    renderAll();
+    notify(`已刪除收藏集「${collection.name}」；素材仍保留在素材庫。`);
+  } catch (error) {
+    notify(`無法刪除收藏集：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function persistCollectionOrder(collectionIds) {
+  const previous = [...state.collections];
+  const byId = new Map(
+    state.collections.map((collection) => [collection.id, collection]),
+  );
+  state.collections = collectionIds.map((id) => byId.get(id)).filter(Boolean);
+  renderCollectionNav();
+  renderCollectionOverview();
+  try {
+    const result = await api("/api/collections/order", {
+      method: "PATCH",
+      body: JSON.stringify({ collectionIds }),
+    });
+    state.collections = listFrom(result, ["items", "collections", "data"]).map(
+      normalizeCollection,
+    );
+    renderCollectionNav();
+    renderCollectionOverview();
+    renderBatchBar();
+  } catch (error) {
+    state.collections = previous;
+    renderCollectionNav();
+    renderCollectionOverview();
+    notify(`無法更新收藏集順序：${error.message}`, "error");
+  }
+}
+
+async function moveCollection(collectionId, direction) {
+  const ids = state.collections.map((collection) => collection.id);
+  const index = ids.indexOf(collectionId);
+  const nextIndex = index + Number(direction);
+  if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return;
+  [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
+  await persistCollectionOrder(ids);
+  requestAnimationFrame(() => {
+    elements.collectionTable
+      .querySelector(`[data-move-collection="${CSS.escape(collectionId)}"]`)
+      ?.focus();
+  });
+}
+
+async function addBatchToCollection(collectionId) {
+  if (!collectionId) {
+    notify("請先選擇收藏集。", "error");
+    return;
+  }
+  const eligible = selectedAnalyzedAssets();
+  const skipped = state.selectedIds.size - eligible.length;
+  if (!eligible.length) {
+    notify("選取內容中沒有分析完成、可加入收藏集的素材。", "error");
+    return;
+  }
+  const button = elements.batchAddCollectionButton;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "加入中…";
+  try {
+    await api(`/api/collections/${encodeURIComponent(collectionId)}/items`, {
+      method: "POST",
+      body: JSON.stringify({ assetIds: eligible.map((asset) => asset.id) }),
+    });
+    for (const asset of eligible) {
+      if (!asset.collectionIds.includes(collectionId)) {
+        asset.collectionIds.push(collectionId);
+      }
+    }
+    await refreshCollections();
+    const collection = state.collections.find((item) => item.id === collectionId);
+    notify(
+      `已將 ${formatNumber(eligible.length)} 張素材加入「${collection?.name || "收藏集"}」${
+        skipped ? `；略過 ${formatNumber(skipped)} 張尚未完成分析的素材` : ""
+      }。`,
+    );
+  } catch (error) {
+    notify(`無法批次加入收藏集：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+    renderBatchBar();
+  }
+}
+
 async function addToCollection(assetId, collectionId) {
   if (!collectionId) {
     notify("請先選擇收藏集。", "error");
@@ -2816,6 +3168,80 @@ function showDialog(dialog) {
 
 function closeDialog(dialog) {
   if (dialog?.open) dialog.close();
+}
+
+function inspectorWidthBounds() {
+  const railWidth = Number.parseFloat(
+    getComputedStyle(elements.app).getPropertyValue("--rail-width"),
+  );
+  const available = window.innerWidth - (Number.isFinite(railWidth) ? railWidth : 0);
+  return {
+    min: 300,
+    max: Math.max(300, Math.min(720, available - 420)),
+  };
+}
+
+function currentInspectorWidth() {
+  return Number.parseFloat(
+    getComputedStyle(elements.app).getPropertyValue("--inspector-width"),
+  );
+}
+
+function setInspectorWidth(value) {
+  if (window.matchMedia("(max-width: 920px)").matches) return;
+  const bounds = inspectorWidthBounds();
+  const width = Math.round(Math.max(bounds.min, Math.min(bounds.max, value)));
+  elements.app.style.setProperty("--inspector-width", `${width}px`);
+  elements.inspectorResizer.setAttribute("aria-valuemin", String(bounds.min));
+  elements.inspectorResizer.setAttribute("aria-valuemax", String(bounds.max));
+  elements.inspectorResizer.setAttribute("aria-valuenow", String(width));
+}
+
+function startInspectorResize(event) {
+  if (event.button !== 0 || window.matchMedia("(max-width: 920px)").matches) {
+    return;
+  }
+  event.preventDefault();
+  state.inspectorResize = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startWidth: currentInspectorWidth(),
+  };
+  elements.inspectorResizer.setPointerCapture(event.pointerId);
+  document.body.classList.add("is-resizing-inspector");
+}
+
+function updateInspectorResize(event) {
+  if (!state.inspectorResize || event.pointerId !== state.inspectorResize.pointerId) {
+    return;
+  }
+  setInspectorWidth(
+    state.inspectorResize.startWidth + state.inspectorResize.startX - event.clientX,
+  );
+}
+
+function stopInspectorResize(event) {
+  if (!state.inspectorResize || event.pointerId !== state.inspectorResize.pointerId) {
+    return;
+  }
+  if (elements.inspectorResizer.hasPointerCapture(event.pointerId)) {
+    elements.inspectorResizer.releasePointerCapture(event.pointerId);
+  }
+  state.inspectorResize = null;
+  document.body.classList.remove("is-resizing-inspector");
+}
+
+function handleInspectorResizeKey(event) {
+  if (window.matchMedia("(max-width: 920px)").matches) return;
+  const bounds = inspectorWidthBounds();
+  let next = currentInspectorWidth();
+  if (event.key === "ArrowLeft") next += 24;
+  else if (event.key === "ArrowRight") next -= 24;
+  else if (event.key === "Home") next = bounds.min;
+  else if (event.key === "End") next = bounds.max;
+  else return;
+  event.preventDefault();
+  setInspectorWidth(next);
 }
 
 async function openSettings() {
@@ -2996,6 +3422,7 @@ elements.sortSelect.addEventListener("change", () => {
 });
 
 elements.clearFiltersButton.addEventListener("click", clearFilters);
+elements.selectAllButton.addEventListener("click", toggleSelectAllVisible);
 elements.importButton.addEventListener("click", () => elements.fileInput.click());
 elements.fileInput.addEventListener("change", () => {
   if (elements.fileInput.files?.length) importFilesSafely(elements.fileInput.files);
@@ -3016,6 +3443,10 @@ elements.recognizeButton.addEventListener("click", () =>
 elements.batchAnalyzeButton.addEventListener("click", () =>
   analyzeAssets([...state.selectedIds]),
 );
+elements.batchCollectionSelect.addEventListener("change", renderBatchBar);
+elements.batchAddCollectionButton.addEventListener("click", () =>
+  addBatchToCollection(elements.batchCollectionSelect.value),
+);
 elements.clearSelectionButton.addEventListener("click", () => {
   state.selectedIds.clear();
   renderGallery();
@@ -3029,27 +3460,38 @@ elements.queueToggle.addEventListener("click", () => {
   renderQueue();
 });
 elements.newCollectionButton.addEventListener("click", () => {
-  elements.collectionForm.reset();
-  showDialog(elements.collectionDialog);
-  requestAnimationFrame(() => elements.collectionName.focus());
+  openCollectionEditor();
 });
 
 elements.collectionForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const name = elements.collectionName.value.trim();
   if (!name) return;
+  const collectionId = elements.collectionId.value;
   const submit = elements.collectionForm.querySelector('[type="submit"]');
   submit.disabled = true;
   try {
-    await createCollection(name);
+    if (collectionId) await updateCollectionName(collectionId, name);
+    else await createCollection(name);
     closeDialog(elements.collectionDialog);
     elements.collectionForm.reset();
-    notify(`已建立收藏集「${name}」。`);
+    notify(collectionId ? `已重新命名為「${name}」。` : `已建立收藏集「${name}」。`);
   } catch (error) {
-    notify(`無法建立收藏集：${error.message}`, "error");
+    notify(`無法${collectionId ? "重新命名" : "建立"}收藏集：${error.message}`, "error");
   } finally {
     submit.disabled = false;
   }
+});
+
+elements.collectionDeleteForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.collectionDeleteId) {
+    await deleteCollectionRecord(state.collectionDeleteId);
+  }
+});
+
+elements.collectionDeleteDialog.addEventListener("close", () => {
+  state.collectionDeleteId = null;
 });
 
 elements.trashForm.addEventListener("submit", async (event) => {
@@ -3143,6 +3585,30 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  const renameCollectionButton = target.closest("[data-rename-collection]");
+  if (renameCollectionButton) {
+    const collection = state.collections.find(
+      (item) => item.id === renameCollectionButton.dataset.renameCollection,
+    );
+    if (collection) openCollectionEditor(collection);
+    return;
+  }
+
+  const deleteCollectionButton = target.closest("[data-delete-collection]");
+  if (deleteCollectionButton) {
+    openCollectionDeleteDialog(deleteCollectionButton.dataset.deleteCollection);
+    return;
+  }
+
+  const moveCollectionButton = target.closest("[data-move-collection]");
+  if (moveCollectionButton) {
+    await moveCollection(
+      moveCollectionButton.dataset.moveCollection,
+      moveCollectionButton.dataset.direction,
+    );
+    return;
+  }
+
   const collectionButton = target.closest("[data-collection-id]");
   if (collectionButton) {
     await openCollection(collectionButton.dataset.collectionId);
@@ -3159,9 +3625,7 @@ document.addEventListener("click", async (event) => {
     } else if (action === "settings") {
       await openSettings();
     } else if (action === "new-collection") {
-      elements.collectionForm.reset();
-      showDialog(elements.collectionDialog);
-      requestAnimationFrame(() => elements.collectionName.focus());
+      openCollectionEditor();
     } else if (action === "import") {
       elements.fileInput.click();
     } else if (action === "clear-filters") {
@@ -3278,7 +3742,17 @@ document.addEventListener("click", async (event) => {
 document.addEventListener("contextmenu", (event) => {
   const card = event.target.closest?.("[data-asset-id]");
   if (!card) {
-    closeAssetContextMenu();
+    const gallery = event.target.closest?.("#gallery");
+    if (gallery && state.view === "inbox" && !state.activeCollectionId) {
+      event.preventDefault();
+      openWorkspaceContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        returnFocus: elements.selectAllButton,
+      });
+    } else {
+      closeAssetContextMenu();
+    }
     return;
   }
   event.preventDefault();
@@ -3293,7 +3767,63 @@ document.addEventListener("contextmenu", (event) => {
 elements.workspace.addEventListener("scroll", () => closeAssetContextMenu(), {
   passive: true,
 });
-window.addEventListener("resize", () => closeAssetContextMenu());
+window.addEventListener("resize", () => {
+  closeAssetContextMenu();
+  if (elements.app.style.getPropertyValue("--inspector-width")) {
+    setInspectorWidth(currentInspectorWidth());
+  }
+});
+
+elements.inspectorResizer.addEventListener("pointerdown", startInspectorResize);
+elements.inspectorResizer.addEventListener("pointermove", updateInspectorResize);
+elements.inspectorResizer.addEventListener("pointerup", stopInspectorResize);
+elements.inspectorResizer.addEventListener("pointercancel", stopInspectorResize);
+elements.inspectorResizer.addEventListener("keydown", handleInspectorResizeKey);
+
+elements.collectionTable.addEventListener("dragstart", (event) => {
+  const handle = event.target.closest?.("[data-collection-drag]");
+  if (!handle) return;
+  state.draggedCollectionId = handle.dataset.collectionDrag;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", state.draggedCollectionId);
+  handle.closest("[data-collection-row]")?.classList.add("is-dragging");
+});
+
+elements.collectionTable.addEventListener("dragover", (event) => {
+  if (!state.draggedCollectionId) return;
+  const row = event.target.closest?.("[data-collection-row]");
+  if (!row || row.dataset.collectionRow === state.draggedCollectionId) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  elements.collectionTable
+    .querySelectorAll(".is-drop-before, .is-drop-after")
+    .forEach((item) => item.classList.remove("is-drop-before", "is-drop-after"));
+  const after = event.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+  row.classList.add(after ? "is-drop-after" : "is-drop-before");
+});
+
+elements.collectionTable.addEventListener("drop", async (event) => {
+  const row = event.target.closest?.("[data-collection-row]");
+  const draggedId = state.draggedCollectionId;
+  if (!row || !draggedId || row.dataset.collectionRow === draggedId) return;
+  event.preventDefault();
+  const ids = state.collections
+    .map((collection) => collection.id)
+    .filter((id) => id !== draggedId);
+  const targetIndex = ids.indexOf(row.dataset.collectionRow);
+  const after = event.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+  ids.splice(targetIndex + (after ? 1 : 0), 0, draggedId);
+  await persistCollectionOrder(ids);
+});
+
+elements.collectionTable.addEventListener("dragend", () => {
+  state.draggedCollectionId = null;
+  elements.collectionTable
+    .querySelectorAll(".is-dragging, .is-drop-before, .is-drop-after")
+    .forEach((item) =>
+      item.classList.remove("is-dragging", "is-drop-before", "is-drop-after"),
+    );
+});
 
 document.addEventListener(
   "error",

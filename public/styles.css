@@ -719,6 +719,12 @@ svg {
   margin-left: auto;
 }
 
+.select-all-button[aria-pressed="true"] {
+  border-color: var(--blue);
+  color: var(--blue-deep);
+  background: var(--blue-soft);
+}
+
 .batch-bar {
   position: sticky;
   z-index: 9;
@@ -737,11 +743,19 @@ svg {
   color: var(--muted);
 }
 
-.batch-bar > div {
+.batch-actions {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-left: auto;
+}
+
+.batch-collection-control select {
+  min-width: 148px;
+  height: 34px;
+  border: 1px solid var(--rule-strong);
+  padding-inline: 8px 26px;
+  background: var(--paper-raised);
 }
 
 .setup-notice {
@@ -1150,27 +1164,151 @@ svg {
 }
 
 .collection-row {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) 100px auto;
+  grid-template-columns: 34px 92px minmax(160px, 1fr) auto auto;
   align-items: center;
-  min-height: 58px;
-  gap: 16px;
+  min-height: 82px;
+  gap: 12px;
   border-bottom: 1px solid var(--rule);
+  padding-block: 8px;
 }
 
 .collection-row:last-child {
   border-bottom: 0;
 }
 
-.collection-row strong {
+.collection-row.is-dragging {
+  opacity: 0.48;
+}
+
+.collection-row.is-drop-before::before,
+.collection-row.is-drop-after::after {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  left: 0;
+  height: 3px;
+  background: var(--blue);
+  content: "";
+}
+
+.collection-row.is-drop-before::before {
+  top: -2px;
+}
+
+.collection-row.is-drop-after::after {
+  bottom: -2px;
+}
+
+.collection-drag-handle {
+  display: grid;
+  width: 32px;
+  height: 42px;
+  place-items: center;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: grab;
+}
+
+.collection-drag-handle:active {
+  cursor: grabbing;
+}
+
+.collection-cover {
+  display: grid;
+  width: 92px;
+  height: 62px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background: var(--paper-muted);
+}
+
+.collection-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.collection-cover-empty {
+  color: var(--rule-strong);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.collection-row-main {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  border: 0;
+  padding: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.collection-row-main:hover {
+  color: var(--blue-deep);
+  background: var(--blue-soft);
+}
+
+.collection-row-main strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.collection-row output {
+.collection-row-main small {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+.collection-order-actions,
+.collection-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.collection-delete-button:hover {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.inspector-resizer {
+  position: relative;
+  z-index: 12;
+  grid-area: inspector;
+  width: 11px;
+  min-height: 0;
+  justify-self: start;
+  margin-left: -5px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.inspector-resizer::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 1px;
+  background: transparent;
+  content: "";
+}
+
+.inspector-resizer:hover::after,
+.inspector-resizer:focus-visible::after,
+body.is-resizing-inspector .inspector-resizer::after {
+  width: 3px;
+  background: var(--blue);
+}
+
+body.is-resizing-inspector {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .inspector {
@@ -2137,6 +2275,10 @@ svg {
     background: var(--paper-raised);
   }
 
+  .inspector-resizer {
+    display: none;
+  }
+
   body.is-inspector-open .inspector {
     display: block;
   }
@@ -2256,8 +2398,13 @@ svg {
     display: none;
   }
 
-  .batch-bar > div {
+  .batch-actions {
+    flex-wrap: wrap;
     margin-left: auto;
+  }
+
+  .batch-collection-control select {
+    min-width: 132px;
   }
 
   .codex-disclosure--batch {
@@ -2307,13 +2454,23 @@ svg {
   }
 
   .collection-row {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 30px 64px minmax(0, 1fr) auto;
     gap: 8px;
     padding-block: 9px;
   }
 
-  .collection-row output {
-    grid-column: 1;
+  .collection-cover {
+    width: 64px;
+    height: 56px;
+  }
+
+  .collection-order-actions {
+    grid-column: 3;
+  }
+
+  .collection-row-actions {
+    grid-column: 4;
+    grid-row: 1 / span 2;
   }
 
   .queue-bar {
