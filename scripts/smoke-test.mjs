@@ -119,23 +119,31 @@ try {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        customTags: ["smoke-reference", "smoke-secondary"],
+        customTags: ["高顆粒", "雜誌編輯"],
       }),
       signal: AbortSignal.timeout(20_000),
     },
   );
   const tagged = await tagResponse.json();
   const tagSearchResponse = await fetch(
-    `${baseUrl}/api/assets?tag=${encodeURIComponent("smoke-reference")}&tag=${encodeURIComponent("smoke-secondary")}`,
+    `${baseUrl}/api/assets?tag=${encodeURIComponent("顆粒")}&tag=${encodeURIComponent("編輯")}`,
     { signal: AbortSignal.timeout(20_000) },
   );
   const tagSearch = await tagSearchResponse.json();
+  const textSearchResponse = await fetch(
+    `${baseUrl}/api/assets?query=${encodeURIComponent("顆粒 編輯")}`,
+    { signal: AbortSignal.timeout(20_000) },
+  );
+  const textSearch = await textSearchResponse.json();
   if (
     !tagResponse.ok ||
-    tagged.customTags?.[0] !== "smoke-reference" ||
-    tagSearch.items?.[0]?.id !== imported.asset.id
+    tagged.customTags?.[0] !== "高顆粒" ||
+    !tagSearchResponse.ok ||
+    tagSearch.items?.[0]?.id !== imported.asset.id ||
+    !textSearchResponse.ok ||
+    textSearch.items?.[0]?.id !== imported.asset.id
   ) {
-    throw new Error("Custom tag persistence or search indexing failed.");
+    throw new Error("Fuzzy custom tag persistence or search indexing failed.");
   }
 
   const createCollectionResponse = await fetch(`${baseUrl}/api/collections`, {
@@ -219,7 +227,7 @@ try {
   }
 
   console.log(
-    `Smoke test passed: HTTP 200, v${bootstrap.version}, CSP present, custom tags searchable, collections manageable, asset removal recoverable.`,
+    `Smoke test passed: HTTP 200, v${bootstrap.version}, CSP present, fuzzy multi-tag search works, collections manageable, asset removal recoverable.`,
   );
 } catch (error) {
   if (output.trim()) console.error(output.trim());

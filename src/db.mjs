@@ -268,7 +268,7 @@ function analysisSearchFields(analysis) {
   };
 }
 
-function safeFtsQuery(value) {
+function safeSearchTokens(value) {
   if (value === undefined || value === null || String(value).trim() === "") {
     return null;
   }
@@ -281,11 +281,36 @@ function safeFtsQuery(value) {
     16,
   );
   if (unique.length === 0) {
-    return "";
+    return [];
   }
-  return unique
-    .map((token) => `"${token.replaceAll('"', '""')}"*`)
-    .join(" AND ");
+  return unique;
+}
+
+function ftsPrefixQuery(token) {
+  return `"${String(token).replaceAll('"', '""')}"*`;
+}
+
+function normalizeTagFilterList(value) {
+  const seen = new Set();
+  return normalizeFilterList(value)
+    .map((item) => item.normalize("NFKC").trim())
+    .filter((item) => {
+      if (!item) return false;
+      const key = item.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function tagContainsPattern(value) {
+  const escaped = String(value)
+    .normalize("NFKC")
+    .trim()
+    .replaceAll("!", "!!")
+    .replaceAll("%", "!%")
+    .replaceAll("_", "!_");
+  return `%${escaped}%`;
 }
 
 function normalizeFilterList(value) {
@@ -985,29 +1010,49 @@ export function createCatalog(dbPath) {
     const offset = paginationInteger(filters.offset, 0);
     const where = [];
     const parameters = [];
-    const ftsQuery = safeFtsQuery(filters.query);
+    const searchTokens = safeSearchTokens(filters.query);
 
-    if (ftsQuery === "") {
+    if (searchTokens?.length === 0) {
       where.push("0 = 1");
-    } else if (ftsQuery !== null) {
-      where.push(`
-        EXISTS (
-          SELECT 1
-          FROM asset_search
-          WHERE asset_search.asset_id = a.id
-            AND asset_search MATCH ?
-        )
-      `);
-      parameters.push(ftsQuery);
+    } else if (searchTokens !== null) {
+      for (const token of searchTokens) {
+        const tagPattern = tagContainsPattern(token);
+        where.push(`(
+          EXISTS (
+            SELECT 1
+            FROM asset_search
+            WHERE asset_search.asset_id = a.id
+              AND asset_search MATCH ?
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM json_each(a.custom_tags_json) search_custom_tag
+            WHERE TRIM(CAST(search_custom_tag.value AS TEXT))
+              LIKE ? ESCAPE '!' COLLATE NOCASE
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM analyses search_analysis,
+                 json_each(search_analysis.tags_json) search_detected_tag
+            WHERE search_analysis.asset_id = a.id
+              AND search_analysis.is_current = 1
+              AND TRIM(CAST(search_detected_tag.value AS TEXT))
+                LIKE ? ESCAPE '!' COLLATE NOCASE
+          )
+        )`);
+        parameters.push(ftsPrefixQuery(token), tagPattern, tagPattern);
+      }
     }
 
-    const tags = normalizeFilterList(pick(filters, "tags", "tag"));
+    const tags = normalizeTagFilterList(pick(filters, "tags", "tag"));
     for (const tag of tags) {
+      const tagPattern = tagContainsPattern(tag);
       where.push(`(
         EXISTS (
           SELECT 1
           FROM json_each(a.custom_tags_json) custom_tag
-          WHERE TRIM(CAST(custom_tag.value AS TEXT)) = ? COLLATE NOCASE
+          WHERE TRIM(CAST(custom_tag.value AS TEXT))
+            LIKE ? ESCAPE '!' COLLATE NOCASE
         )
         OR EXISTS (
           SELECT 1
@@ -1015,10 +1060,11 @@ export function createCatalog(dbPath) {
                json_each(tag_analysis.tags_json) detected_tag
           WHERE tag_analysis.asset_id = a.id
             AND tag_analysis.is_current = 1
-            AND TRIM(CAST(detected_tag.value AS TEXT)) = ? COLLATE NOCASE
+            AND TRIM(CAST(detected_tag.value AS TEXT))
+              LIKE ? ESCAPE '!' COLLATE NOCASE
         )
       )`);
-      parameters.push(tag, tag);
+      parameters.push(tagPattern, tagPattern);
     }
 
     const statuses = normalizeFilterList(filters.status);

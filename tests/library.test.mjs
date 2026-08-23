@@ -268,7 +268,7 @@ test("custom tags persist independently and participate in search", async (t) =>
   );
 });
 
-test("tag filters match exact detected or custom tags with AND semantics", async (t) => {
+test("tag search fuzzily matches detected or custom tags with AND semantics", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stylebase-tag-filter-"));
   const catalog = createCatalog(path.join(root, "catalog.sqlite"));
   t.after(async () => {
@@ -292,24 +292,48 @@ test("tag filters match exact detected or custom tags with AND semantics", async
     return catalog.updateAsset(asset.id, { customTags });
   };
 
-  const mobileCommerce = addAsset(1, ["mobile", "commerce"], ["高優先"]);
-  addAsset(2, ["mobile"], ["editorial"]);
-  addAsset(3, ["mobile-first", "commerce"], ["高優先"]);
+  const exactGrain = addAsset(1, ["顆粒", "編輯版面"], []);
+  const highGrain = addAsset(2, ["高顆粒"], ["雜誌編輯"]);
+  const grainTexture = addAsset(3, ["顆粒質感", "海報"], []);
+  addAsset(4, ["高顆", "粒質感", "編輯版面"], []);
+  const mobileFirst = addAsset(5, ["mobile-first", "commerce"], []);
+  const literalWildcard = addAsset(6, ["100% 覆蓋"], []);
+
+  const sortedIds = (result) =>
+    result.items.map((asset) => asset.id).sort((left, right) => left - right);
+  const fuzzyGrainIds = [exactGrain.id, highGrain.id, grainTexture.id].sort(
+    (left, right) => left - right,
+  );
+  const fuzzyGrainAndEditorialIds = [exactGrain.id, highGrain.id].sort(
+    (left, right) => left - right,
+  );
 
   assert.deepEqual(
-    catalog.listAssets({ tags: ["mobile", "commerce"] }).items.map((asset) =>
-      asset.id,
-    ),
-    [mobileCommerce.id],
+    sortedIds(catalog.listAssets({ tags: ["顆粒"] })),
+    fuzzyGrainIds,
   );
   assert.deepEqual(
-    catalog.listAssets({ tags: ["mobile", "高優先"] }).items.map((asset) =>
-      asset.id,
-    ),
-    [mobileCommerce.id],
+    sortedIds(catalog.listAssets({ tags: ["顆粒", "編輯"] })),
+    fuzzyGrainAndEditorialIds,
   );
-  assert.equal(catalog.listAssets({ tags: ["MOBILE"] }).total, 2);
+  assert.deepEqual(
+    sortedIds(catalog.listAssets({ query: "顆粒" })),
+    fuzzyGrainIds,
+  );
+  assert.deepEqual(
+    sortedIds(catalog.listAssets({ query: "顆粒 編輯" })),
+    fuzzyGrainAndEditorialIds,
+  );
+  assert.equal(catalog.listAssets({ tags: ["MOBILE"] }).total, 1);
   assert.equal(catalog.listAssets({ tags: ["mobile-first"] }).total, 1);
+  assert.equal(
+    catalog.listAssets({ tags: ["mobile"] }).items[0].id,
+    mobileFirst.id,
+  );
+  assert.equal(
+    catalog.listAssets({ tags: ["%"] }).items[0].id,
+    literalWildcard.id,
+  );
 });
 
 test("createCatalog migrates a v1 asset database without losing records", async (t) => {

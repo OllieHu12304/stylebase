@@ -3149,7 +3149,7 @@ async function toggleTagFilter(value) {
   if (!applied) return;
   notify(
     state.tagFilters.length
-      ? `已套用 ${formatNumber(state.tagFilters.length)} 個標籤索引；結果需符合全部標籤。`
+      ? `已套用 ${formatNumber(state.tagFilters.length)} 個標籤索引；每個條件會比對包含相同字詞的標籤，且需全部符合。`
       : "已清除標籤索引。",
   );
 }
