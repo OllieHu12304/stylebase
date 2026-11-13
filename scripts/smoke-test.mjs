@@ -188,12 +188,33 @@ try {
     !addCollectionItemsResponse.ok ||
     populatedCollection.itemCount !== 1 ||
     populatedCollection.coverAssetId !== String(imported.asset.id) ||
+    populatedCollection.coverAssetIds?.[0] !== String(imported.asset.id) ||
     !renameCollectionResponse.ok ||
     renamedCollection.name !== "Renamed smoke collection" ||
     !reorderCollectionsResponse.ok ||
     reorderedCollections[0]?.id !== collection.id
   ) {
     throw new Error("Collection management API smoke test failed.");
+  }
+  const removeCollectionItemResponse = await fetch(
+    `${baseUrl}/api/collections/${encodeURIComponent(collection.id)}/items/${encodeURIComponent(imported.asset.id)}`,
+    {
+      method: "DELETE",
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  const collectionAfterRemovalResponse = await fetch(
+    `${baseUrl}/api/collections/${encodeURIComponent(collection.id)}`,
+    { signal: AbortSignal.timeout(20_000) },
+  );
+  const collectionAfterRemoval = await collectionAfterRemovalResponse.json();
+  if (
+    !removeCollectionItemResponse.ok ||
+    !collectionAfterRemovalResponse.ok ||
+    collectionAfterRemoval.itemCount !== 0 ||
+    collectionAfterRemoval.coverAssetIds?.length !== 0
+  ) {
+    throw new Error("Collection item removal smoke test failed.");
   }
   const deleteCollectionResponse = await fetch(
     `${baseUrl}/api/collections/${encodeURIComponent(collection.id)}`,

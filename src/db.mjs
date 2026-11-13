@@ -448,15 +448,27 @@ function collectionFromRow(row) {
   if (!row) {
     return null;
   }
+  const coverAssetIds = [
+    ...new Set(
+      jsonParse(row.cover_asset_ids_json, [])
+        .map((id) => String(id))
+        .filter(Boolean),
+    ),
+  ].slice(0, 4);
+  if (
+    coverAssetIds.length === 0 &&
+    row.cover_asset_id !== null &&
+    row.cover_asset_id !== undefined
+  ) {
+    coverAssetIds.push(String(row.cover_asset_id));
+  }
   return {
     id: row.id,
     name: row.name,
     itemCount: Number(row.item_count ?? 0),
     sortOrder: Number(row.sort_order ?? 0),
-    coverAssetId:
-      row.cover_asset_id === null || row.cover_asset_id === undefined
-        ? null
-        : String(row.cover_asset_id),
+    coverAssetIds,
+    coverAssetId: coverAssetIds[0] ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1712,12 +1724,15 @@ export function createCatalog(dbPath) {
           c.updated_at,
           COUNT(ci.asset_id) AS item_count,
           (
-            SELECT latest.asset_id
-            FROM collection_items latest
-            WHERE latest.collection_id = c.id
-            ORDER BY latest.added_at DESC, latest.asset_id DESC
-            LIMIT 1
-          ) AS cover_asset_id
+            SELECT json_group_array(cover.asset_id)
+            FROM (
+              SELECT latest.asset_id
+              FROM collection_items latest
+              WHERE latest.collection_id = c.id
+              ORDER BY latest.added_at DESC, latest.asset_id DESC
+              LIMIT 4
+            ) cover
+          ) AS cover_asset_ids_json
         FROM collections c
         LEFT JOIN collection_items ci ON ci.collection_id = c.id
         GROUP BY c.id
@@ -1739,7 +1754,7 @@ export function createCatalog(dbPath) {
         db
           .prepare(`
             SELECT id, name, sort_order, created_at, updated_at,
-              0 AS item_count, NULL AS cover_asset_id
+              0 AS item_count, '[]' AS cover_asset_ids_json
             FROM collections
             WHERE id = ?
           `)
@@ -1779,6 +1794,7 @@ export function createCatalog(dbPath) {
       name: collection.name,
       itemCount: rows.length,
       sortOrder: Number(collection.sort_order ?? 0),
+      coverAssetIds: rows.slice(0, 4).map((row) => String(row.id)),
       coverAssetId: rows[0] ? String(rows[0].id) : null,
       createdAt: collection.created_at,
       updatedAt: collection.updated_at,

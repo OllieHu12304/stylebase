@@ -329,6 +329,18 @@ function normalizeAsset(raw) {
 
 function normalizeCollection(raw) {
   const collection = asObject(raw);
+  const coverAssetIds = [
+    ...new Set(
+      asArray(
+        collection.coverAssetIds ||
+          collection.cover_asset_ids ||
+          collection.coverAssetId ||
+          collection.cover_asset_id,
+      )
+        .map((id) => String(id ?? ""))
+        .filter(Boolean),
+    ),
+  ].slice(0, 4);
   return {
     ...collection,
     id: String(collection.id ?? collection.collectionId ?? ""),
@@ -341,11 +353,8 @@ function normalizeCollection(raw) {
         collection.total,
       ) ?? asArray(collection.items).length,
     sortOrder: finiteNumber(collection.sortOrder, collection.sort_order) ?? 0,
-    coverAssetId:
-      collection.coverAssetId === null || collection.cover_asset_id === null
-        ? null
-        : String(collection.coverAssetId ?? collection.cover_asset_id ?? "") ||
-          null,
+    coverAssetIds,
+    coverAssetId: coverAssetIds[0] ?? null,
   };
 }
 
@@ -1178,9 +1187,7 @@ function renderCollectionOverview() {
 
   elements.collectionTable.innerHTML = state.collections
     .map((collection, index) => {
-      const coverUrl = collection.coverAssetId
-        ? `/media/${encodeURIComponent(collection.coverAssetId)}`
-        : "";
+      const coverAssetIds = collection.coverAssetIds.slice(0, 4);
       return `
         <article class="collection-row" data-collection-row="${escapeHTML(collection.id)}">
           <button
@@ -1193,10 +1200,19 @@ function renderCollectionOverview() {
           >
             <svg class="icon" aria-hidden="true"><use href="#icon-grip"></use></svg>
           </button>
-          <span class="collection-cover" aria-hidden="true">
+          <span
+            class="collection-cover"
+            data-cover-count="${coverAssetIds.length}"
+            aria-hidden="true"
+          >
             ${
-              coverUrl
-                ? `<img src="${escapeHTML(coverUrl)}" alt="" loading="lazy" />`
+              coverAssetIds.length
+                ? coverAssetIds
+                    .map(
+                      (assetId) =>
+                        `<img src="/media/${encodeURIComponent(assetId)}" alt="" loading="lazy" />`,
+                    )
+                    .join("")
                 : '<span class="collection-cover-empty">EMPTY</span>'
             }
           </span>
@@ -1407,6 +1423,7 @@ function closeAssetContextMenu({ restoreFocus = false } = {}) {
 
 function renderAssetContextMenu(asset) {
   const batchSelected = state.selectedIds.has(asset.id);
+  const currentCollection = activeCollection();
   const active = statusIsActive(asset.status);
   const canExportAgentPrompt = hasExportableAnalysis(normalizedAnalysis(asset));
   const processing = ["running", "processing", "analyzing"].includes(
@@ -1431,6 +1448,18 @@ function renderAssetContextMenu(asset) {
             <svg class="icon" aria-hidden="true"><use href="#icon-check"></use></svg>
             <span>${batchSelected ? "移出批次" : "加入批次"}</span>
           </button>
+          ${
+            currentCollection
+              ? `<button
+                  type="button"
+                  role="menuitem"
+                  data-context-action="remove-current-collection"
+                >
+                  <svg class="icon" aria-hidden="true"><use href="#icon-collection"></use></svg>
+                  <span>從「${escapeHTML(currentCollection.name)}」移出</span>
+                </button>`
+              : ""
+          }
           <button
             type="button"
             role="menuitem"
@@ -1620,6 +1649,15 @@ async function runAssetContextAction(action) {
     await copyStyleboardBrief(assetId);
   } else if (action === "export-agent") {
     await copyAgentPrompt(assetId);
+  } else if (
+    action === "remove-current-collection" &&
+    state.activeCollectionId
+  ) {
+    try {
+      await removeFromCollection(assetId, state.activeCollectionId);
+    } catch (error) {
+      notify(`無法移出收藏集：${error.message}`, "error");
+    }
   } else if (action === "trash") {
     openTrashDialog(assetId);
   }
@@ -1823,11 +1861,19 @@ function renderCollectionControls(asset) {
             .map(
               (collection) => `
                 <button
-                  class="text-button"
+                  class="${
+                    collection.id === state.activeCollectionId
+                      ? "button button--quiet"
+                      : "text-button"
+                  }"
                   type="button"
                   data-remove-collection="${escapeHTML(collection.id)}"
                   data-asset-id="${escapeHTML(asset.id)}"
-                >移出 ${escapeHTML(collection.name)}</button>`,
+                >${
+                  collection.id === state.activeCollectionId
+                    ? `從目前收藏集移出`
+                    : `移出 ${escapeHTML(collection.name)}`
+                }</button>`,
             )
             .join("")}</div>`
         : ""
@@ -2438,7 +2484,7 @@ async function refreshCollections() {
     normalizeCollection,
   );
   renderCollectionNav();
-  renderCollectionOverview();
+  if (state.view === "collections") renderCollectionOverview();
   renderCounts();
   renderInspector();
 }
@@ -3097,6 +3143,8 @@ async function addToCollection(assetId, collectionId) {
 }
 
 async function removeFromCollection(assetId, collectionId) {
+  const collection = state.collections.find((item) => item.id === collectionId);
+  const removingFromActiveCollection = state.activeCollectionId === collectionId;
   await api(
     `/api/collections/${encodeURIComponent(collectionId)}/items/${encodeURIComponent(
       assetId,
@@ -3107,8 +3155,20 @@ async function removeFromCollection(assetId, collectionId) {
   if (asset) {
     asset.collectionIds = asset.collectionIds.filter((id) => id !== collectionId);
   }
+  if (removingFromActiveCollection) {
+    state.selectedIds.delete(assetId);
+    if (state.selectedId === assetId) {
+      state.selectedId = null;
+      state.inspectorReturnFocus = null;
+      state.inspectorReturnAssetId = null;
+      document.body.classList.remove("is-inspector-open");
+    }
+  }
   await refreshCollections();
-  notify("影像已移出收藏集。");
+  if (removingFromActiveCollection) await refreshAssets();
+  notify(
+    `已從「${collection?.name || "收藏集"}」移出；素材與分析仍保留在素材庫。`,
+  );
 }
 
 async function openCollection(id) {

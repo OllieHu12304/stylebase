@@ -182,16 +182,59 @@ test(
       fileName: "second.png",
       mimeType: "image/png",
     }).asset;
+    const thirdAsset = catalog.upsertAsset({
+      sha256: "3".repeat(64),
+      relativePath: "third.png",
+      fileName: "third.png",
+      mimeType: "image/png",
+    }).asset;
+    const fourthAsset = catalog.upsertAsset({
+      sha256: "4".repeat(64),
+      relativePath: "fourth.png",
+      fileName: "fourth.png",
+      mimeType: "image/png",
+    }).asset;
+    const fifthAsset = catalog.upsertAsset({
+      sha256: "5".repeat(64),
+      relativePath: "fifth.png",
+      fileName: "fifth.png",
+      mimeType: "image/png",
+    }).asset;
     const firstCollection = catalog.createCollection("First");
     const secondCollection = catalog.createCollection("Second");
 
     const populated = catalog.addCollectionItems(firstCollection.id, [
       firstAsset.id,
       secondAsset.id,
+      thirdAsset.id,
+      fourthAsset.id,
+      fifthAsset.id,
       firstAsset.id,
     ]);
-    assert.equal(populated.itemCount, 2);
-    assert.equal(populated.coverAssetId, String(secondAsset.id));
+    assert.equal(populated.itemCount, 5);
+    assert.deepEqual(populated.coverAssetIds, [
+      String(fifthAsset.id),
+      String(fourthAsset.id),
+      String(thirdAsset.id),
+      String(secondAsset.id),
+    ]);
+    assert.deepEqual(
+      catalog.listCollections()[0].coverAssetIds,
+      populated.coverAssetIds,
+    );
+
+    const removed = catalog.removeCollectionItem(
+      firstCollection.id,
+      fifthAsset.id,
+    );
+    assert.equal(removed.removed, true);
+    assert.equal(removed.collection.itemCount, 4);
+    assert.deepEqual(removed.collection.coverAssetIds, [
+      String(fourthAsset.id),
+      String(thirdAsset.id),
+      String(secondAsset.id),
+      String(firstAsset.id),
+    ]);
 
     const renamed = catalog.updateCollection(firstCollection.id, {
       name: "Renamed",
