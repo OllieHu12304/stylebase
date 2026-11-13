@@ -15,7 +15,7 @@ npm.cmd run validate
 5. Markdown 相對連結檢查。
 6. `.env`、SQLite、素材圖片與常見 Token 格式檢查。
 
-GitHub Actions 在 push 與 pull request 執行同一指令。
+原倉庫以 GitHub Actions 在 push 與 pull request 執行同一指令；本獨立倉庫請於推送前在本機執行。
 
 ## 自動測試覆蓋
 
@@ -24,7 +24,7 @@ GitHub Actions 在 push 與 pull request 執行同一指令。
 - CSP-safe 色票輸出與 HEX 驗證。
 - Library 掃描、格式與去重行為。
 - 素材移入本機垃圾桶、還原與資料庫關聯清理。
-- Codex／自訂標籤的精準比對、不分大小寫與多標籤 AND 交集查詢。
+- Codex／自訂標籤的包含式模糊比對、不分大小寫與多標籤 AND 交集查詢。
 - Styleboard Brief 的證據蒸餾上限、原圖優先規則、跨平台路徑，以及完整分析的可追溯內容與缺少分析時的拒絕行為。
 - Codex Agent 命令組裝、輸出驗證、錯誤分類與暫存清理。
 - 含逗號與空白的圖片檔名會經安全暫存路徑送交，無法讀圖的零信心分析會被拒絕而非保存。
